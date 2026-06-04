@@ -1,0 +1,4 @@
+-keep class org.apache.poi.** { *; }
+-keep class org.openxmlformats.** { *; }
+-keep class schemasMicrosoftComOfficeOffice.** { *; }
+-keep class schemasMicrosoftComVml.** { *; }
