@@ -1,0 +1,129 @@
+name: Android Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, for example v1.2. Leave empty to use the current ref name."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build APK and publish release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Android SDK packages
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager "platforms;android-36" "build-tools;36.1.0"
+
+      - name: Resolve release metadata
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          input_tag="${{ github.event.inputs.tag }}"
+          if [ -n "$input_tag" ]; then
+            tag_name="$input_tag"
+          else
+            tag_name="${GITHUB_REF_NAME}"
+          fi
+
+          if [[ ! "$tag_name" =~ ^v[0-9]+(\.[0-9]+)*$ ]]; then
+            echo "::error::Release tag must look like v1.2 or v1.2.3. Got: $tag_name"
+            exit 1
+          fi
+
+          version_name="$(grep -E 'versionName[[:space:]]*=' app/build.gradle.kts | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')"
+          version_code="$(grep -E 'versionCode[[:space:]]*=' app/build.gradle.kts | head -n 1 | sed -E 's/.*=[[:space:]]*([0-9]+).*/\1/')"
+          expected_tag="v${version_name}"
+
+          if [ "$tag_name" != "$expected_tag" ]; then
+            echo "::error::Tag $tag_name does not match app versionName $version_name. Expected $expected_tag."
+            exit 1
+          fi
+
+          echo "tag_name=$tag_name" >> "$GITHUB_OUTPUT"
+          echo "version_name=$version_name" >> "$GITHUB_OUTPUT"
+          echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
+
+      - name: Build debug APK
+        run: |
+          chmod +x ./gradlew
+          ./gradlew clean :app:assembleDebug --no-daemon -Dkotlin.compiler.execution.strategy=in-process
+
+      - name: Prepare release assets
+        id: assets
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag_name="${{ steps.release.outputs.tag_name }}"
+          version_name="${{ steps.release.outputs.version_name }}"
+          version_code="${{ steps.release.outputs.version_code }}"
+          apk_name="SmartReimburse-${tag_name}-debug.apk"
+
+          mkdir -p release-artifacts
+          cp app/build/outputs/apk/debug/app-debug.apk "release-artifacts/${apk_name}"
+          sha256sum "release-artifacts/${apk_name}" > "release-artifacts/${apk_name}.sha256"
+
+          cat > release-notes.md <<EOF
+          ## SmartReimburse ${tag_name}
+
+          - Auto-built by GitHub Actions.
+          - Commit: ${GITHUB_SHA}
+          - Android versionName: ${version_name}
+          - Android versionCode: ${version_code}
+          EOF
+
+          echo "apk_path=release-artifacts/${apk_name}" >> "$GITHUB_OUTPUT"
+          echo "sha_path=release-artifacts/${apk_name}.sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag_name="${{ steps.release.outputs.tag_name }}"
+          title="SmartReimburse ${tag_name}"
+          apk_path="${{ steps.assets.outputs.apk_path }}"
+          sha_path="${{ steps.assets.outputs.sha_path }}"
+
+          if gh release view "$tag_name" >/dev/null 2>&1; then
+            gh release edit "$tag_name" \
+              --title "$title" \
+              --notes-file release-notes.md \
+              --latest
+          else
+            gh release create "$tag_name" \
+              --target "$GITHUB_SHA" \
+              --title "$title" \
+              --notes-file release-notes.md \
+              --latest
+          fi
+
+          gh release upload "$tag_name" "$apk_path" "$sha_path" --clobber
