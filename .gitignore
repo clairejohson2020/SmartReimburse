@@ -10,6 +10,7 @@ build/
 
 # Local SDK / machine-specific config
 .android-sdk/
+.tools/
 local.properties
 
 # Generated APKs and packaged outputs
