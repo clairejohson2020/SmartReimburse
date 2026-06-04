@@ -14,7 +14,8 @@ interface ExpenseDao {
     @Query(
         """
         SELECT * FROM expenses
-        WHERE (:keyword = ''
+        WHERE projectId = :projectId
+        AND (:keyword = ''
             OR name LIKE '%' || :keyword || '%'
             OR model LIKE '%' || :keyword || '%'
             OR notes LIKE '%' || :keyword || '%'
@@ -29,6 +30,7 @@ interface ExpenseDao {
         """
     )
     fun observeFilteredExpenses(
+        projectId: Long,
         keyword: String,
         fromDate: Long?,
         toDate: Long?,
@@ -37,8 +39,8 @@ interface ExpenseDao {
         invoiceFilter: Boolean?
     ): Flow<List<ExpenseEntity>>
 
-    @Query("SELECT COALESCE(SUM(totalAmount), 0) FROM expenses")
-    fun observeTotalSpent(): Flow<Double>
+    @Query("SELECT COALESCE(SUM(totalAmount), 0) FROM expenses WHERE projectId = :projectId")
+    fun observeTotalSpent(projectId: Long): Flow<Double>
 
     @Query("SELECT * FROM expenses WHERE id = :id")
     suspend fun getExpense(id: Long): ExpenseEntity?
@@ -52,8 +54,8 @@ interface ExpenseDao {
     suspend fun getExpenseWithAttachments(id: Long): ExpenseWithAttachments?
 
     @Transaction
-    @Query("SELECT * FROM expenses ORDER BY date DESC")
-    suspend fun getAllExpenseWithAttachments(): List<ExpenseWithAttachments>
+    @Query("SELECT * FROM expenses WHERE projectId = :projectId ORDER BY date DESC")
+    suspend fun getAllExpenseWithAttachments(projectId: Long): List<ExpenseWithAttachments>
 
     @Query("SELECT * FROM attachments WHERE expenseId = :expenseId")
     suspend fun getAttachmentsForExpense(expenseId: Long): List<AttachmentEntity>
@@ -72,6 +74,9 @@ interface ExpenseDao {
 
     @Query("DELETE FROM attachments WHERE expenseId = :expenseId")
     suspend fun deleteAttachmentsForExpense(expenseId: Long)
+
+    @Query("DELETE FROM expenses WHERE projectId = :projectId")
+    suspend fun deleteExpensesForProject(projectId: Long)
 
     @Transaction
     suspend fun insertExpenseWithAttachments(

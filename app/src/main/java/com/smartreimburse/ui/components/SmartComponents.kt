@@ -4,6 +4,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -79,6 +80,7 @@ fun GlassTopBar(
     modifier: Modifier = Modifier,
     navigationIcon: ImageVector? = null,
     onNavigationClick: (() -> Unit)? = null,
+    onTitleClick: (() -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {}
 ) {
     Box(
@@ -93,7 +95,17 @@ fun GlassTopBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = if (onTitleClick == null) {
+                    Modifier
+                } else {
+                    Modifier
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable(onClick = onTitleClick)
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 if (navigationIcon != null && onNavigationClick != null) {
                     IconButton(onClick = onNavigationClick) {
                         Icon(navigationIcon, contentDescription = null, tint = AccentCyan)

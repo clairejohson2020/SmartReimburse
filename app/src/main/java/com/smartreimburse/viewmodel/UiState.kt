@@ -1,6 +1,16 @@
 package com.smartreimburse.viewmodel
 
 import com.smartreimburse.data.AttachmentType
+import com.smartreimburse.data.ProjectEntity
+
+data class ProjectSelectionUiState(
+    val projects: List<ProjectEntity> = emptyList(),
+    val currentProjectId: Long? = null,
+    val message: String? = null
+) {
+    val currentProject: ProjectEntity? = projects.firstOrNull { it.id == currentProjectId }
+    val canDeleteProject: Boolean = projects.size > 1
+}
 
 enum class InvoiceFilter(val label: String) {
     ALL("全部"),
@@ -39,6 +49,7 @@ data class AttachmentDraft(
 
 data class ExpenseFormUiState(
     val id: Long = 0,
+    val projectId: Long = 1,
     val name: String = "",
     val model: String = "",
     val quantity: String = "1",

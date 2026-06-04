@@ -14,11 +14,15 @@ class ExcelExporter(private val context: Context) {
     private val fileDateFormatter = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.CHINA)
     private val displayDateFormatter = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.CHINA)
 
-    fun export(expenses: List<ExpenseWithAttachments>): File {
+    fun export(projectName: String, expenses: List<ExpenseWithAttachments>): File {
         val baseDirectory = context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS)
             ?: File(context.filesDir, "documents")
         val directory = File(baseDirectory, "exports").apply { mkdirs() }
-        val outputFile = File(directory, "SmartReimburse_${fileDateFormatter.format(Date())}.xlsx")
+        val safeProjectName = projectName.toSafeFileName()
+        val outputFile = File(
+            directory,
+            "SmartReimburse_${safeProjectName}_${fileDateFormatter.format(Date())}.xlsx"
+        )
 
         XSSFWorkbook().use { workbook ->
             val sheet = workbook.createSheet("报销明细")
@@ -29,6 +33,7 @@ class ExcelExporter(private val context: Context) {
             }
 
             val headers = listOf(
+                "项目名称",
                 "名称",
                 "型号",
                 "数量",
@@ -59,18 +64,19 @@ class ExcelExporter(private val context: Context) {
                     File(it.filePath).name
                 }
 
-                row.createCell(0).setCellValue(expense.name)
-                row.createCell(1).setCellValue(expense.model)
-                row.createCell(2).setCellValue(expense.quantity.toDouble())
-                row.createCell(3).setCellValue(expense.totalAmount)
-                row.createCell(4).setCellValue(displayDateFormatter.format(Date(expense.date)))
-                row.createCell(5).setCellValue(invoiceLabel)
-                row.createCell(6).setCellValue(expense.onlineLink.orEmpty())
-                row.createCell(7).setCellValue(expense.notes.orEmpty())
-                row.createCell(8).setCellValue(attachmentNames)
+                row.createCell(0).setCellValue(projectName)
+                row.createCell(1).setCellValue(expense.name)
+                row.createCell(2).setCellValue(expense.model)
+                row.createCell(3).setCellValue(expense.quantity.toDouble())
+                row.createCell(4).setCellValue(expense.totalAmount)
+                row.createCell(5).setCellValue(displayDateFormatter.format(Date(expense.date)))
+                row.createCell(6).setCellValue(invoiceLabel)
+                row.createCell(7).setCellValue(expense.onlineLink.orEmpty())
+                row.createCell(8).setCellValue(expense.notes.orEmpty())
+                row.createCell(9).setCellValue(attachmentNames)
             }
 
-            val columnWidths = listOf(18, 18, 10, 14, 20, 22, 32, 28, 42)
+            val columnWidths = listOf(18, 18, 18, 10, 14, 20, 22, 32, 28, 42)
             columnWidths.forEachIndexed { index, width ->
                 sheet.setColumnWidth(index, width * 256)
             }
@@ -82,5 +88,15 @@ class ExcelExporter(private val context: Context) {
         }
 
         return outputFile
+    }
+
+    private fun String.toSafeFileName(): String {
+        return trim()
+            .ifBlank { "项目" }
+            .map { char ->
+                if (char in setOf('\\', '/', ':', '*', '?', '"', '<', '>', '|')) '_' else char
+            }
+            .joinToString("")
+            .take(40)
     }
 }

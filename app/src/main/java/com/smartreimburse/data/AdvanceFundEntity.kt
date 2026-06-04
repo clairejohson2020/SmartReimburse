@@ -6,6 +6,6 @@ import androidx.room.PrimaryKey
 @Entity(tableName = "advance_fund")
 data class AdvanceFundEntity(
     @PrimaryKey
-    val id: Long = 1,
+    val projectId: Long,
     val totalFund: Double
 )

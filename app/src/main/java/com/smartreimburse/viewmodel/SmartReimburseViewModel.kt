@@ -1,6 +1,7 @@
 package com.smartreimburse.viewmodel
 
 import android.app.Application
+import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -14,6 +15,7 @@ import com.smartreimburse.export.ExcelExporter
 import com.smartreimburse.ocr.OcrParser
 import com.smartreimburse.ocr.TextRecognitionService
 import com.smartreimburse.repository.ExpenseRepository
+import com.smartreimburse.repository.ExpenseRepository.Companion.DEFAULT_PROJECT_ID
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +25,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -32,7 +35,9 @@ import kotlinx.coroutines.withContext
 @OptIn(ExperimentalCoroutinesApi::class)
 class SmartReimburseViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getInstance(application)
+    private val preferences = application.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
     private val repository = ExpenseRepository(
+        projectDao = database.projectDao(),
         expenseDao = database.expenseDao(),
         advanceFundDao = database.advanceFundDao()
     )
@@ -47,27 +52,140 @@ class SmartReimburseViewModel(application: Application) : AndroidViewModel(appli
     private val _formState = MutableStateFlow(ExpenseFormUiState())
     val formState: StateFlow<ExpenseFormUiState> = _formState
 
-    val dashboardState: StateFlow<DashboardUiState> = combine(
-        repository.observeAdvanceFund(),
-        repository.observeTotalSpent()
-    ) { totalFund, totalSpent ->
-        DashboardUiState(totalFund = totalFund, totalSpent = totalSpent)
+    private val _currentProjectId = MutableStateFlow<Long?>(null)
+    private val _projectMessage = MutableStateFlow<String?>(null)
+
+    val projectState: StateFlow<ProjectSelectionUiState> = combine(
+        repository.observeProjects(),
+        _currentProjectId,
+        _projectMessage
+    ) { projects, currentProjectId, message ->
+        val resolvedProjectId = currentProjectId
+            ?.takeIf { id -> projects.any { it.id == id } }
+            ?: projects.firstOrNull()?.id
+        ProjectSelectionUiState(
+            projects = projects,
+            currentProjectId = resolvedProjectId,
+            message = message
+        )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = DashboardUiState()
+        initialValue = ProjectSelectionUiState()
     )
 
-    val expenses = _filterState
-        .flatMapLatest { repository.observeFilteredExpenses(it) }
+    val dashboardState: StateFlow<DashboardUiState> = _currentProjectId
+        .filterNotNull()
+        .flatMapLatest { projectId ->
+            combine(
+                repository.observeAdvanceFund(projectId),
+                repository.observeTotalSpent(projectId)
+            ) { totalFund, totalSpent ->
+                DashboardUiState(totalFund = totalFund, totalSpent = totalSpent)
+            }
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = DashboardUiState()
+        )
+
+    val expenses = combine(
+        _filterState,
+        _currentProjectId.filterNotNull()
+    ) { filter, projectId ->
+        projectId to filter
+    }
+        .flatMapLatest { (projectId, filter) -> repository.observeFilteredExpenses(projectId, filter) }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
             initialValue = emptyList()
         )
 
+    init {
+        viewModelScope.launch {
+            val savedProjectId = preferences
+                .getLong(KEY_CURRENT_PROJECT_ID, 0L)
+                .takeIf { it > 0L }
+            val project = repository.ensureInitialProject(savedProjectId)
+            selectProjectInternal(project.id)
+        }
+    }
+
     fun observeExpenseDetail(id: Long): Flow<ExpenseWithAttachments?> {
         return repository.observeExpenseWithAttachments(id)
+    }
+
+    fun selectProject(projectId: Long) {
+        viewModelScope.launch {
+            if (repository.getProject(projectId) != null) {
+                selectProjectInternal(projectId, resetFilter = true)
+            }
+        }
+    }
+
+    fun createProject(name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isBlank()) {
+            _projectMessage.value = "请输入项目名称"
+            return
+        }
+
+        viewModelScope.launch {
+            runCatching {
+                repository.createProject(trimmed)
+            }.onSuccess { project ->
+                selectProjectInternal(project.id, resetFilter = true)
+                _projectMessage.value = "项目已创建"
+            }.onFailure { throwable ->
+                _projectMessage.value = throwable.message ?: "项目创建失败"
+            }
+        }
+    }
+
+    fun renameProject(projectId: Long, name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isBlank()) {
+            _projectMessage.value = "请输入项目名称"
+            return
+        }
+
+        viewModelScope.launch {
+            runCatching {
+                repository.renameProject(projectId, trimmed)
+            }.onSuccess { updated ->
+                if (updated == null) {
+                    _projectMessage.value = "项目不存在"
+                } else {
+                    _projectMessage.value = "项目已重命名"
+                }
+            }.onFailure { throwable ->
+                _projectMessage.value = throwable.message ?: "项目重命名失败"
+            }
+        }
+    }
+
+    fun deleteProject(projectId: Long) {
+        viewModelScope.launch {
+            runCatching {
+                repository.deleteProjectAndFiles(projectId)
+            }.onSuccess { nextProject ->
+                if (nextProject == null) {
+                    _projectMessage.value = "至少保留一个项目"
+                    return@onSuccess
+                }
+                if (_currentProjectId.value == projectId) {
+                    selectProjectInternal(nextProject.id, resetFilter = true)
+                }
+                _projectMessage.value = "项目已删除"
+            }.onFailure { throwable ->
+                _projectMessage.value = throwable.message ?: "项目删除失败"
+            }
+        }
+    }
+
+    fun dismissProjectMessage() {
+        _projectMessage.value = null
     }
 
     fun setAdvanceFund(value: String) {
@@ -77,7 +195,7 @@ class SmartReimburseViewModel(application: Application) : AndroidViewModel(appli
             return
         }
         viewModelScope.launch {
-            repository.setAdvanceFund(amount)
+            repository.setAdvanceFund(activeProjectId(), amount)
         }
     }
 
@@ -86,7 +204,7 @@ class SmartReimburseViewModel(application: Application) : AndroidViewModel(appli
     }
 
     fun startNewExpense() {
-        _formState.value = ExpenseFormUiState()
+        _formState.value = ExpenseFormUiState(projectId = activeProjectId())
     }
 
     fun loadExpenseForEdit(expenseId: Long) {
@@ -95,6 +213,7 @@ class SmartReimburseViewModel(application: Application) : AndroidViewModel(appli
             val expense = detail.expense
             _formState.value = ExpenseFormUiState(
                 id = expense.id,
+                projectId = expense.projectId,
                 name = expense.name,
                 model = expense.model,
                 quantity = expense.quantity.toString(),
@@ -200,6 +319,7 @@ class SmartReimburseViewModel(application: Application) : AndroidViewModel(appli
                 val totalAmount = state.totalAmount.toDoubleOrNull() ?: price * quantity
                 val expense = ExpenseEntity(
                     id = state.id,
+                    projectId = state.projectId,
                     name = state.name.trim(),
                     model = state.model.trim(),
                     quantity = quantity,
@@ -242,11 +362,13 @@ class SmartReimburseViewModel(application: Application) : AndroidViewModel(appli
     fun exportExcel(onReady: (File) -> Unit) {
         viewModelScope.launch {
             runCatching {
+                val projectId = _currentProjectId.value ?: error("请先创建项目")
+                val project = repository.getProject(projectId) ?: error("当前项目不存在")
                 val details = withContext(Dispatchers.IO) {
-                    repository.getAllExpenseWithAttachments()
+                    repository.getAllExpenseWithAttachments(projectId)
                 }
                 withContext(Dispatchers.IO) {
-                    excelExporter.export(details)
+                    excelExporter.export(project.name, details)
                 }
             }.onSuccess(onReady)
                 .onFailure { throwable ->
@@ -274,6 +396,21 @@ class SmartReimburseViewModel(application: Application) : AndroidViewModel(appli
         if (runOcr) {
             runOcrForImage(path, type)
         }
+    }
+
+    private fun activeProjectId(): Long {
+        return _currentProjectId.value ?: DEFAULT_PROJECT_ID
+    }
+
+    private fun selectProjectInternal(projectId: Long, resetFilter: Boolean = false) {
+        _currentProjectId.value = projectId
+        preferences.edit()
+            .putLong(KEY_CURRENT_PROJECT_ID, projectId)
+            .apply()
+        if (resetFilter) {
+            _filterState.value = ExpenseFilterUiState()
+        }
+        _projectMessage.value = null
     }
 
     private fun runOcrForImage(path: String, type: AttachmentType) {
@@ -365,5 +502,10 @@ class SmartReimburseViewModel(application: Application) : AndroidViewModel(appli
         } else {
             "%.2f".format(value)
         }
+    }
+
+    companion object {
+        private const val PREFERENCES_NAME = "smart_reimburse_preferences"
+        private const val KEY_CURRENT_PROJECT_ID = "current_project_id"
     }
 }

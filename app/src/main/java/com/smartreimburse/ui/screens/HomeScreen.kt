@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -22,9 +23,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FilterList
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.Numbers
 import androidx.compose.material.icons.outlined.Paid
@@ -56,6 +60,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.smartreimburse.data.ExpenseEntity
+import com.smartreimburse.data.ProjectEntity
 import com.smartreimburse.share.ShareManager
 import com.smartreimburse.ui.components.GlassTopBar
 import com.smartreimburse.ui.components.GradientCard
@@ -74,6 +79,7 @@ import com.smartreimburse.ui.theme.WarningRed
 import com.smartreimburse.viewmodel.DashboardUiState
 import com.smartreimburse.viewmodel.ExpenseFilterUiState
 import com.smartreimburse.viewmodel.InvoiceFilter
+import com.smartreimburse.viewmodel.ProjectSelectionUiState
 import com.smartreimburse.viewmodel.SmartReimburseViewModel
 
 @Composable
@@ -85,15 +91,20 @@ fun HomeScreen(
     val dashboard by viewModel.dashboardState.collectAsStateWithLifecycle()
     val expenses by viewModel.expenses.collectAsStateWithLifecycle()
     val filter by viewModel.filterState.collectAsStateWithLifecycle()
+    val projectState by viewModel.projectState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    var showProjectDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = TechBlack,
         topBar = {
             GlassTopBar(
-                title = "SmartReimburse",
+                title = projectState.currentProject?.let { "项目：${it.name}" } ?: "项目加载中",
+                onTitleClick = { showProjectDialog = true },
                 actions = {
-                    IconButton(onClick = {
+                    IconButton(
+                        enabled = projectState.currentProject != null,
+                        onClick = {
                         viewModel.exportExcel { file ->
                             ShareManager.shareExcel(context, file)
                         }
@@ -142,6 +153,229 @@ fun HomeScreen(
                 ExpenseListCard(expense = expense, onClick = { onExpenseClick(expense.id) })
             }
             item { Spacer(Modifier.height(64.dp)) }
+        }
+    }
+
+    if (showProjectDialog) {
+        ProjectManagerDialog(
+            projectState = projectState,
+            onDismiss = {
+                viewModel.dismissProjectMessage()
+                showProjectDialog = false
+            },
+            onSelect = { projectId ->
+                viewModel.selectProject(projectId)
+                showProjectDialog = false
+            },
+            onCreate = viewModel::createProject,
+            onRename = viewModel::renameProject,
+            onDelete = viewModel::deleteProject,
+            onDismissMessage = viewModel::dismissProjectMessage
+        )
+    }
+}
+
+@Composable
+private fun ProjectManagerDialog(
+    projectState: ProjectSelectionUiState,
+    onDismiss: () -> Unit,
+    onSelect: (Long) -> Unit,
+    onCreate: (String) -> Unit,
+    onRename: (Long, String) -> Unit,
+    onDelete: (Long) -> Unit,
+    onDismissMessage: () -> Unit
+) {
+    var newProjectName by remember { mutableStateOf("") }
+    var renameTarget by remember { mutableStateOf<ProjectEntity?>(null) }
+    var renameInput by remember { mutableStateOf("") }
+    var deleteTarget by remember { mutableStateOf<ProjectEntity?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("完成")
+            }
+        },
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.FolderOpen, contentDescription = null, tint = AccentCyan)
+                Text("报销项目", modifier = Modifier.padding(start = 8.dp))
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                projectState.message?.let { message ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(TechBlack.copy(alpha = 0.5f))
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = message,
+                            color = TextBright,
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        IconButton(
+                            modifier = Modifier.size(32.dp),
+                            onClick = onDismissMessage
+                        ) {
+                            Icon(Icons.Outlined.CheckCircle, contentDescription = "知道了", tint = AccentCyan)
+                        }
+                    }
+                }
+
+                if (projectState.projects.isEmpty()) {
+                    Text("正在准备项目...", color = TextMuted)
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 280.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(projectState.projects, key = { it.id }) { project ->
+                            ProjectRow(
+                                project = project,
+                                selected = project.id == projectState.currentProjectId,
+                                canDelete = projectState.canDeleteProject,
+                                onSelect = { onSelect(project.id) },
+                                onRename = {
+                                    renameTarget = project
+                                    renameInput = project.name
+                                },
+                                onDelete = { deleteTarget = project }
+                            )
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    SmartTextField(
+                        value = newProjectName,
+                        onValueChange = { newProjectName = it },
+                        label = "新项目名称",
+                        modifier = Modifier.weight(1f),
+                        leadingIcon = Icons.Outlined.FolderOpen
+                    )
+                    TextButton(onClick = {
+                        onCreate(newProjectName)
+                        newProjectName = ""
+                    }) {
+                        Text("新建")
+                    }
+                }
+            }
+        },
+        containerColor = CardDark,
+        titleContentColor = TextBright,
+        textContentColor = TextBright
+    )
+
+    renameTarget?.let { project ->
+        AlertDialog(
+            onDismissRequest = { renameTarget = null },
+            confirmButton = {
+                TextButton(onClick = {
+                    onRename(project.id, renameInput)
+                    renameTarget = null
+                }) {
+                    Text("保存")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { renameTarget = null }) {
+                    Text("取消")
+                }
+            },
+            title = { Text("重命名项目") },
+            text = {
+                SmartTextField(
+                    value = renameInput,
+                    onValueChange = { renameInput = it },
+                    label = "项目名称",
+                    leadingIcon = Icons.Outlined.Edit
+                )
+            },
+            containerColor = CardDark,
+            titleContentColor = TextBright,
+            textContentColor = TextBright
+        )
+    }
+
+    deleteTarget?.let { project ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDelete(project.id)
+                    deleteTarget = null
+                }) {
+                    Text("删除", color = WarningRed)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) {
+                    Text("取消")
+                }
+            },
+            title = { Text("删除项目") },
+            text = { Text("“${project.name}”下的支出和附件图片会从本机删除。") },
+            containerColor = CardDark,
+            titleContentColor = TextBright,
+            textContentColor = TextBright
+        )
+    }
+}
+
+@Composable
+private fun ProjectRow(
+    project: ProjectEntity,
+    selected: Boolean,
+    canDelete: Boolean,
+    onSelect: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (selected) AccentCyan.copy(alpha = 0.14f) else TechBlack.copy(alpha = 0.45f))
+            .clickable(onClick = onSelect)
+            .padding(start = 12.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = if (selected) Icons.Outlined.CheckCircle else Icons.Outlined.FolderOpen,
+            contentDescription = null,
+            tint = if (selected) AccentCyan else TextMuted
+        )
+        Text(
+            text = project.name,
+            color = TextBright,
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 10.dp),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+        )
+        IconButton(onClick = onRename) {
+            Icon(Icons.Outlined.Edit, contentDescription = "重命名", tint = AccentCyan)
+        }
+        IconButton(enabled = canDelete, onClick = onDelete) {
+            Icon(
+                Icons.Outlined.Delete,
+                contentDescription = "删除",
+                tint = if (canDelete) WarningRed else TextMuted.copy(alpha = 0.35f)
+            )
         }
     }
 }
