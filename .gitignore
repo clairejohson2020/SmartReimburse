@@ -30,6 +30,7 @@ Thumbs.db
 
 # WeChat Mini Program local files
 wechat-miniprogram/project.private.config.json
+wechat-miniprogram-upload-info.json
 wechat-miniprogram/miniprogram/miniprogram_npm/
 wechat-miniprogram/cloudfunctions/**/node_modules/
 wechat-miniprogram/cloudfunctions/**/package-lock.json

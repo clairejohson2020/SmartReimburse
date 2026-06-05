@@ -37,6 +37,25 @@ Page({
   async bootstrap() {
     try {
       const app = getApp()
+      if (!app.globalData.cloudReady) {
+        this.setData({
+          projects: [],
+          expenses: [],
+          currentProjectId: "",
+          currentProject: null,
+          currentProjectName: "请配置云开发",
+          spentText: formatMoney(0),
+          advanceText: formatMoney(0),
+          remainingText: formatMoney(0),
+          totalCount: 0
+        })
+        wx.showModal({
+          title: "云开发未配置",
+          content: "请先填写 miniprogram/env.js 中的 cloudEnv，然后重新编译。",
+          showCancel: false
+        })
+        return
+      }
       const user = await app.ensureLogin()
       this.setData({
         user,

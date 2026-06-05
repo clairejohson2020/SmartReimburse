@@ -4,7 +4,8 @@ const auth = require("./services/auth")
 App({
   globalData: {
     user: null,
-    cloudReady: false
+    cloudReady: false,
+    cloudEnv: config.cloudEnv || ""
   },
 
   onLaunch() {
@@ -17,14 +18,28 @@ App({
       return
     }
 
-    wx.cloud.init({
-      env: config.cloudEnv || undefined,
-      traceUser: true
-    })
-    this.globalData.cloudReady = true
+    if (!config.cloudEnv) {
+      this.globalData.cloudReady = false
+      console.warn("SmartReimburse cloudEnv is empty. Configure miniprogram/env.js before using cloud data.")
+      return
+    }
+
+    try {
+      wx.cloud.init({
+        env: config.cloudEnv,
+        traceUser: true
+      })
+      this.globalData.cloudReady = true
+    } catch (error) {
+      this.globalData.cloudReady = false
+      console.error("wx.cloud.init failed", error)
+    }
   },
 
   async ensureLogin() {
+    if (!this.globalData.cloudReady) {
+      throw new Error("请先配置云开发环境 ID")
+    }
     if (this.globalData.user) {
       return this.globalData.user
     }

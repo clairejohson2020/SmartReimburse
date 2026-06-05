@@ -1,5 +1,5 @@
 module.exports = {
-  // Replace these placeholders in WeChat DevTools before previewing or uploading.
-  cloudEnv: "",
-  appId: "wx0000000000000000"
+  // Active WeChat cloud environment for this mini program.
+  cloudEnv: "cloudbase-d9g9hrovf218daeb5",
+  appId: "wx9d1054ef16683390"
 }
