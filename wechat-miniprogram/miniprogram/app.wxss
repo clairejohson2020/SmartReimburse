@@ -1,0 +1,89 @@
+page {
+  min-height: 100vh;
+  background: #f6f8fb;
+  color: #111827;
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+.page {
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 28rpx;
+}
+
+.section {
+  margin-top: 24rpx;
+}
+
+.card {
+  background: #ffffff;
+  border: 1rpx solid #e5e7eb;
+  border-radius: 12rpx;
+  box-shadow: 0 8rpx 24rpx rgba(15, 23, 42, 0.06);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+}
+
+.between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.muted {
+  color: #6b7280;
+}
+
+.primary-button,
+.ghost-button,
+.danger-button {
+  height: 72rpx;
+  line-height: 72rpx;
+  border-radius: 10rpx;
+  font-size: 28rpx;
+  padding: 0 28rpx;
+}
+
+.primary-button {
+  color: #ffffff;
+  background: #0f766e;
+}
+
+.ghost-button {
+  color: #0f172a;
+  background: #eef2f7;
+}
+
+.danger-button {
+  color: #ffffff;
+  background: #dc2626;
+}
+
+.input,
+.textarea,
+.picker-field {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 76rpx;
+  padding: 18rpx 20rpx;
+  color: #111827;
+  background: #ffffff;
+  border: 1rpx solid #d1d5db;
+  border-radius: 10rpx;
+  font-size: 28rpx;
+}
+
+.textarea {
+  min-height: 144rpx;
+}
+
+.label {
+  display: block;
+  margin: 22rpx 0 10rpx;
+  color: #374151;
+  font-size: 26rpx;
+  font-weight: 600;
+}

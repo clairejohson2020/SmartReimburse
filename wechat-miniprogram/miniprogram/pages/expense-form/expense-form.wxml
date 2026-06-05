@@ -1,0 +1,65 @@
+<view class="page form-page">
+  <view class="card form-card">
+    <label class="label">名称</label>
+    <input class="input" value="{{form.name}}" data-field="name" bindinput="onFieldInput" placeholder="支出名称" />
+
+    <label class="label">型号</label>
+    <input class="input" value="{{form.model}}" data-field="model" bindinput="onFieldInput" placeholder="型号或规格" />
+
+    <view class="two-columns">
+      <view>
+        <label class="label">数量</label>
+        <input class="input" type="number" value="{{form.quantity}}" data-field="quantity" bindinput="onFieldInput" />
+      </view>
+      <view>
+        <label class="label">金额</label>
+        <input class="input" type="digit" value="{{form.totalAmount}}" data-field="totalAmount" bindinput="onFieldInput" />
+      </view>
+    </view>
+
+    <label class="label">日期</label>
+    <picker mode="date" value="{{dateValue}}" bindchange="onDateChange">
+      <view class="picker-field">{{dateValue}}</view>
+    </picker>
+
+    <view class="between invoice-row">
+      <text class="label inline-label">有发票</text>
+      <switch checked="{{form.hasInvoice}}" color="#0f766e" bindchange="onInvoiceSwitch" />
+    </view>
+
+    <label wx:if="{{form.hasInvoice}}" class="label">发票号码</label>
+    <input wx:if="{{form.hasInvoice}}" class="input" value="{{form.invoiceNumber}}" data-field="invoiceNumber" bindinput="onFieldInput" placeholder="发票号码" />
+
+    <label class="label">网购链接</label>
+    <input class="input" value="{{form.onlineLink}}" data-field="onlineLink" bindinput="onFieldInput" placeholder="可选" />
+
+    <label class="label">备注</label>
+    <textarea class="textarea" value="{{form.notes}}" data-field="notes" bindinput="onFieldInput" placeholder="可选" />
+  </view>
+
+  <view class="card attachment-card section">
+    <view class="between">
+      <view class="card-title">附件</view>
+      <button class="ghost-button ocr-button" loading="{{ocrLoading}}" bindtap="runOcr">OCR</button>
+    </view>
+
+    <view class="attachment-actions">
+      <button class="ghost-button attach-button" data-type="invoice" bindtap="chooseAttachment">发票</button>
+      <button class="ghost-button attach-button" data-type="payment" bindtap="chooseAttachment">付款截图</button>
+      <button class="ghost-button attach-button" data-type="other" bindtap="chooseAttachment">其他</button>
+    </view>
+
+    <view wx:if="{{attachments.length === 0}}" class="empty-attachments">暂无附件</view>
+    <view wx:else class="attachment-list">
+      <view wx:for="{{attachments}}" wx:key="fileID" class="attachment-row">
+        <view class="attachment-info" data-index="{{index}}" bindtap="previewAttachment">
+          <text class="attachment-type">{{item.typeText || "附件"}}</text>
+          <text class="attachment-name">{{item.fileName}}</text>
+        </view>
+        <button class="danger-button remove-button" data-index="{{index}}" bindtap="removeAttachment">删除</button>
+      </view>
+    </view>
+  </view>
+
+  <button class="primary-button save-button" loading="{{saving}}" bindtap="saveExpense">保存</button>
+</view>

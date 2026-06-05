@@ -1,0 +1,93 @@
+.form-page {
+  padding-bottom: 48rpx;
+}
+
+.form-card,
+.attachment-card {
+  padding: 24rpx;
+}
+
+.two-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18rpx;
+}
+
+.invoice-row {
+  margin-top: 18rpx;
+}
+
+.inline-label {
+  margin: 0;
+}
+
+.card-title {
+  font-size: 32rpx;
+  font-weight: 800;
+}
+
+.ocr-button {
+  margin: 0;
+  width: 132rpx;
+}
+
+.attachment-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14rpx;
+  margin-top: 22rpx;
+}
+
+.attach-button {
+  margin: 0;
+  padding: 0;
+}
+
+.empty-attachments {
+  padding: 28rpx 0 6rpx;
+  color: #6b7280;
+  font-size: 26rpx;
+}
+
+.attachment-list {
+  margin-top: 18rpx;
+}
+
+.attachment-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16rpx 0;
+  border-top: 1rpx solid #e5e7eb;
+}
+
+.attachment-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.attachment-type {
+  display: inline-block;
+  margin-right: 12rpx;
+  padding: 4rpx 10rpx;
+  color: #0f766e;
+  background: #ccfbf1;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+}
+
+.attachment-name {
+  color: #374151;
+  font-size: 26rpx;
+}
+
+.remove-button {
+  width: 112rpx;
+  margin: 0 0 0 16rpx;
+  padding: 0;
+  font-size: 24rpx;
+}
+
+.save-button {
+  margin-top: 28rpx;
+}

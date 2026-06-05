@@ -1,0 +1,15 @@
+{
+  "pages": [
+    "pages/home/home",
+    "pages/expense-form/expense-form",
+    "pages/expense-detail/expense-detail"
+  ],
+  "window": {
+    "navigationBarTitleText": "SmartReimburse",
+    "navigationBarBackgroundColor": "#0F172A",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#F6F8FB"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

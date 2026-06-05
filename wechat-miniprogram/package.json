@@ -1,0 +1,12 @@
+{
+  "name": "smartreimburse-wechat-miniprogram",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "upload": "node ci/upload.js",
+    "check": "node ci/check.js"
+  },
+  "devDependencies": {
+    "miniprogram-ci": "^2.1.31"
+  }
+}

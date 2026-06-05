@@ -1,0 +1,57 @@
+name: WeChat Mini Program Release
+
+on:
+  push:
+    tags:
+      - "mini-v*"
+      - "mp-v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Mini program version, for example 1.2. Leave empty to use Android versionName."
+        required: false
+        type: string
+      desc:
+        description: "Upload description shown in WeChat Mini Program Admin."
+        required: false
+        type: string
+      robot:
+        description: "WeChat upload robot number."
+        required: false
+        default: "1"
+        type: string
+
+jobs:
+  upload:
+    name: Upload mini program and cloud functions
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: wechat-miniprogram/package.json
+
+      - name: Install mini program CI dependencies
+        working-directory: wechat-miniprogram
+        run: npm install
+
+      - name: Validate mini program project files
+        working-directory: wechat-miniprogram
+        run: npm run check
+
+      - name: Upload to WeChat Mini Program
+        working-directory: wechat-miniprogram
+        env:
+          WECHAT_MINIPROGRAM_APPID: ${{ secrets.WECHAT_MINIPROGRAM_APPID }}
+          WECHAT_MINIPROGRAM_PRIVATE_KEY: ${{ secrets.WECHAT_MINIPROGRAM_PRIVATE_KEY }}
+          WECHAT_MINIPROGRAM_CLOUD_ENV: ${{ secrets.WECHAT_MINIPROGRAM_CLOUD_ENV }}
+          WECHAT_MINIPROGRAM_VERSION: ${{ github.event.inputs.version }}
+          WECHAT_MINIPROGRAM_DESC: ${{ github.event.inputs.desc }}
+          WECHAT_MINIPROGRAM_ROBOT: ${{ github.event.inputs.robot }}
+        run: npm run upload

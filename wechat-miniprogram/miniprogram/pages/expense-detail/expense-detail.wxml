@@ -1,0 +1,52 @@
+<view class="page">
+  <view wx:if="{{loading}}" class="loading">加载中...</view>
+
+  <block wx:elif="{{expense}}">
+    <view class="detail-head">
+      <view>
+        <view class="expense-name">{{expense.name}}</view>
+        <view class="expense-model">{{expense.model || "未填写型号"}}</view>
+      </view>
+      <view class="expense-amount">{{expense.amountText}}</view>
+    </view>
+
+    <view class="card detail-card section">
+      <view class="detail-row">
+        <text class="detail-label">数量</text>
+        <text>{{expense.quantity}}</text>
+      </view>
+      <view class="detail-row">
+        <text class="detail-label">日期</text>
+        <text>{{expense.dateText}}</text>
+      </view>
+      <view class="detail-row">
+        <text class="detail-label">发票</text>
+        <text>{{expense.invoiceText}}</text>
+      </view>
+      <view wx:if="{{expense.onlineLink}}" class="detail-row">
+        <text class="detail-label">网购链接</text>
+        <text class="detail-text">{{expense.onlineLink}}</text>
+      </view>
+      <view wx:if="{{expense.notes}}" class="detail-row">
+        <text class="detail-label">备注</text>
+        <text class="detail-text">{{expense.notes}}</text>
+      </view>
+    </view>
+
+    <view class="card attachment-card section">
+      <view class="card-title">附件</view>
+      <view wx:if="{{attachments.length === 0}}" class="muted empty-attachments">暂无附件</view>
+      <view wx:else>
+        <view wx:for="{{attachments}}" wx:key="_id" class="attachment-row" data-index="{{index}}" bindtap="previewAttachment">
+          <text class="attachment-type">{{item.typeText}}</text>
+          <text class="attachment-name">{{item.fileName}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="actions">
+      <button class="ghost-button action-button" bindtap="editExpense">编辑</button>
+      <button class="danger-button action-button" bindtap="deleteExpense">删除</button>
+    </view>
+  </block>
+</view>

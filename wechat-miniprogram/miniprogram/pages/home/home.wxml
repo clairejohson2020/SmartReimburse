@@ -1,0 +1,113 @@
+<view class="page">
+  <view wx:if="{{loading}}" class="loading">加载中...</view>
+
+  <block wx:else>
+    <view wx:if="{{!phoneNumber}}" class="phone-card card">
+      <view>
+        <view class="phone-title">微信账号已登录</view>
+        <view class="phone-subtitle">绑定手机号后可用同一手机号恢复账号。</view>
+      </view>
+      <button class="primary-button bind-phone" open-type="getPhoneNumber" bindgetphonenumber="onGetPhoneNumber">绑定手机号</button>
+    </view>
+
+    <view class="hero">
+      <view>
+        <view class="eyebrow">当前项目</view>
+        <button class="project-title" bindtap="openProjectPanel">{{currentProjectName}}</button>
+      </view>
+      <button class="primary-button export-button" loading="{{exporting}}" bindtap="exportExcel">导出</button>
+    </view>
+
+    <view class="stats">
+      <view class="stat-card">
+        <text class="stat-label">备用金</text>
+        <text class="stat-value">{{advanceText}}</text>
+      </view>
+      <view class="stat-card">
+        <text class="stat-label">已支出</text>
+        <text class="stat-value">{{spentText}}</text>
+      </view>
+      <view class="stat-card">
+        <text class="stat-label">剩余额度</text>
+        <text class="stat-value">{{remainingText}}</text>
+      </view>
+    </view>
+
+    <view class="filter-card card section">
+      <input class="filter-input" value="{{keyword}}" placeholder="搜索名称、型号、备注" bindinput="onKeywordInput" confirm-type="search" bindconfirm="onSearchConfirm" />
+      <picker mode="selector" value="{{invoiceIndex}}" range="{{invoiceLabels}}" bindchange="onInvoiceChange">
+        <view class="filter-picker">{{invoiceLabel}}</view>
+      </picker>
+      <button class="ghost-button filter-button" bindtap="onSearchConfirm">筛选</button>
+    </view>
+
+    <view class="between list-header">
+      <text class="list-title">支出明细</text>
+      <text class="muted">{{totalCount}} 条</text>
+    </view>
+
+    <view wx:if="{{expenses.length === 0}}" class="empty card">
+      <text>暂无支出</text>
+    </view>
+
+    <view wx:else class="expense-list">
+      <view wx:for="{{expenses}}" wx:key="_id" class="expense-card card" data-id="{{item._id}}" bindtap="openExpense">
+        <view class="between">
+          <view class="expense-name">{{item.name}}</view>
+          <view class="expense-amount">{{item.amountText}}</view>
+        </view>
+        <view class="expense-meta">{{item.model || "未填写型号"}} · {{item.quantity}} 件 · {{item.invoiceText}}</view>
+        <view class="between expense-foot">
+          <text>{{item.dateText}}</text>
+          <text>{{item.attachmentCount}} 个附件</text>
+        </view>
+      </view>
+    </view>
+
+    <button class="add-button" bindtap="addExpense">+</button>
+
+    <view wx:if="{{showProjectPanel}}" class="modal-mask" bindtap="closeProjectPanel">
+      <view class="project-panel card" catchtap="noop">
+        <view class="between">
+          <view class="panel-title">项目管理</view>
+          <button class="ghost-button close-button" bindtap="closeProjectPanel">关闭</button>
+        </view>
+
+        <view class="advance-editor">
+          <label class="label">当前项目备用金</label>
+          <view class="row">
+            <input class="input advance-input" type="digit" value="{{advanceInput}}" bindinput="onAdvanceInput" />
+            <button class="primary-button small-button" bindtap="updateAdvanceFund">保存</button>
+          </view>
+        </view>
+
+        <view class="project-create">
+          <label class="label">新建项目</label>
+          <view class="row">
+            <input class="input project-input" value="{{newProjectName}}" placeholder="项目名称" bindinput="onNewProjectName" />
+            <button class="primary-button small-button" bindtap="createProject">新建</button>
+          </view>
+        </view>
+
+        <view class="project-list">
+          <view wx:for="{{projects}}" wx:key="_id" class="project-row">
+            <view wx:if="{{renameProjectId === item._id}}" class="rename-box">
+              <input class="input" value="{{renameProjectName}}" bindinput="onRenameProjectName" />
+              <button class="primary-button small-button" bindtap="renameProject">确定</button>
+            </view>
+            <view wx:else class="between">
+              <view class="project-name-wrap" data-id="{{item._id}}" bindtap="selectProject">
+                <text class="project-name">{{item.name}}</text>
+                <text wx:if="{{currentProjectId === item._id}}" class="active-dot">当前</text>
+              </view>
+              <view class="row">
+                <button class="ghost-button mini-button" data-id="{{item._id}}" bindtap="beginRename">改名</button>
+                <button class="danger-button mini-button" data-id="{{item._id}}" bindtap="deleteProject">删除</button>
+              </view>
+            </view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </block>
+</view>
