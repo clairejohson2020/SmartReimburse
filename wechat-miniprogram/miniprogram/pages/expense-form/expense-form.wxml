@@ -17,6 +17,9 @@
       </view>
     </view>
 
+    <label class="label">单价</label>
+    <input class="input" type="digit" value="{{form.price}}" data-field="price" bindinput="onFieldInput" placeholder="可选" />
+
     <label class="label">日期</label>
     <picker mode="date" value="{{dateValue}}" bindchange="onDateChange">
       <view class="picker-field">{{dateValue}}</view>
@@ -29,6 +32,11 @@
 
     <label wx:if="{{form.hasInvoice}}" class="label">发票号码</label>
     <input wx:if="{{form.hasInvoice}}" class="input" value="{{form.invoiceNumber}}" data-field="invoiceNumber" bindinput="onFieldInput" placeholder="发票号码" />
+
+    <view class="between invoice-row">
+      <text class="label inline-label">已报销</text>
+      <switch checked="{{form.isReimbursed}}" color="#0f766e" bindchange="onReimbursedSwitch" />
+    </view>
 
     <label class="label">网购链接</label>
     <input class="input" value="{{form.onlineLink}}" data-field="onlineLink" bindinput="onFieldInput" placeholder="可选" />
@@ -46,7 +54,7 @@
     <view class="attachment-actions">
       <button class="ghost-button attach-button" data-type="invoice" bindtap="chooseAttachment">发票</button>
       <button class="ghost-button attach-button" data-type="payment" bindtap="chooseAttachment">付款截图</button>
-      <button class="ghost-button attach-button" data-type="other" bindtap="chooseAttachment">其他</button>
+      <button class="ghost-button attach-button" data-type="receipt" bindtap="chooseAttachment">收据/送货单</button>
     </view>
 
     <view wx:if="{{attachments.length === 0}}" class="empty-attachments">暂无附件</view>

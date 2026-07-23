@@ -6,8 +6,10 @@ cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 const db = cloud.database()
 
 exports.main = async event => {
+  const startedAt = Date.now()
   try {
     const user = await requireUser()
+    await cleanupExpiredExports(user.userId)
     const project = await requireProject(user.userId, event.projectId)
     const expenses = await queryExpenses(user.userId, project._id)
     const attachments = await queryAttachments(user.userId, project._id)
@@ -22,17 +24,63 @@ exports.main = async event => {
       fileContent: buffer
     })
 
+    const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000
+    await db.collection("export_files").add({
+      data: {
+        userId: user.userId,
+        projectId: project._id,
+        fileID: upload.fileID,
+        fileName,
+        size: buffer.length,
+        expiresAt,
+        createdAt: db.serverDate()
+      }
+    })
+    console.log(JSON.stringify({
+      name: "excel_export_success",
+      userId: user.userId,
+      projectId: project._id,
+      size: buffer.length,
+      durationMs: Date.now() - startedAt
+    }))
+
     return {
       ok: true,
       fileID: upload.fileID,
       fileName,
-      size: buffer.length
+      size: buffer.length,
+      expiresAt
     }
   } catch (error) {
+    console.error(JSON.stringify({
+      name: "excel_export_failure",
+      error: error.message || "unknown",
+      durationMs: Date.now() - startedAt
+    }))
     return {
       ok: false,
       message: error.message || "导出失败"
     }
+  }
+}
+
+async function cleanupExpiredExports(userId) {
+  const result = await db.collection("export_files")
+    .where({ userId, expiresAt: db.command.lt(Date.now()) })
+    .limit(20)
+    .get()
+  if (result.data.length === 0) return
+  const fileList = result.data.map(item => item.fileID).filter(Boolean)
+  if (fileList.length > 0) {
+    try {
+      await cloud.deleteFile({ fileList })
+    } catch (error) {
+      console.warn(JSON.stringify({ name: "expired_export_cleanup_deferred", userId, fileCount: fileList.length }))
+      return
+    }
+  }
+  for (const item of result.data) {
+    await db.collection("export_files").doc(item._id).remove()
   }
 }
 
@@ -116,9 +164,11 @@ function buildWorkbook(project, expenses, attachmentGroups) {
     { header: "名称", key: "name", width: 20 },
     { header: "型号", key: "model", width: 18 },
     { header: "数量", key: "quantity", width: 10 },
+    { header: "单价", key: "price", width: 14 },
     { header: "金额", key: "amount", width: 14 },
     { header: "日期", key: "date", width: 20 },
     { header: "发票号码/有无发票", key: "invoice", width: 24 },
+    { header: "报销状态", key: "reimbursed", width: 12 },
     { header: "网购链接", key: "onlineLink", width: 32 },
     { header: "备注", key: "notes", width: 28 },
     { header: "附件文件名", key: "attachments", width: 42 }
@@ -134,15 +184,18 @@ function buildWorkbook(project, expenses, attachmentGroups) {
       name: expense.name,
       model: expense.model,
       quantity: Number(expense.quantity || 1),
+      price: Number.isSafeInteger(expense.priceCents) ? expense.priceCents / 100 : Number(expense.price || 0),
       amount: Number(expense.totalAmount || 0),
       date: formatDisplayDate(expense.date),
       invoice: expense.hasInvoice ? (expense.invoiceNumber || "有发票") : "无发票",
+      reimbursed: expense.isReimbursed ? "已报销" : "未报销",
       onlineLink: expense.onlineLink || "",
       notes: expense.notes || "",
       attachments: attachments.map(item => item.fileName).join("; ")
     })
   })
 
+  sheet.getColumn("price").numFmt = "¥#,##0.00"
   sheet.getColumn("amount").numFmt = "¥#,##0.00"
   sheet.eachRow(row => {
     row.eachCell(cell => {

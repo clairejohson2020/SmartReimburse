@@ -58,9 +58,24 @@ if ($dirty -and [string]::IsNullOrWhiteSpace($CommitMessage) -and -not $DryRun) 
 }
 
 if (-not $SkipLocalBuild) {
+    $requiredSigningVariables = @(
+        "ANDROID_KEYSTORE_PATH",
+        "ANDROID_KEYSTORE_PASSWORD",
+        "ANDROID_KEY_ALIAS",
+        "ANDROID_KEY_PASSWORD",
+        "SMART_REIMBURSE_SYNC_API_URL"
+    )
+    foreach ($variableName in $requiredSigningVariables) {
+        if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($variableName))) {
+            throw "Missing release signing environment variable: $variableName"
+        }
+    }
     $gradleArgs = @(
         "clean",
-        ":app:assembleDebug",
+        ":app:testDebugUnitTest",
+        ":app:lintRelease",
+        ":app:assembleRelease",
+        ":app:bundleRelease",
         "-Dkotlin.compiler.execution.strategy=in-process"
     )
 

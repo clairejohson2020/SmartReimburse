@@ -23,8 +23,8 @@ interface ExpenseDao {
             OR onlineLink LIKE '%' || :keyword || '%')
         AND (:fromDate IS NULL OR date >= :fromDate)
         AND (:toDate IS NULL OR date <= :toDate)
-        AND (:minAmount IS NULL OR totalAmount >= :minAmount)
-        AND (:maxAmount IS NULL OR totalAmount <= :maxAmount)
+        AND (:minAmountCents IS NULL OR amountCents >= :minAmountCents)
+        AND (:maxAmountCents IS NULL OR amountCents <= :maxAmountCents)
         AND (:invoiceFilter IS NULL OR hasInvoice = :invoiceFilter)
         ORDER BY date DESC
         """
@@ -34,16 +34,25 @@ interface ExpenseDao {
         keyword: String,
         fromDate: Long?,
         toDate: Long?,
-        minAmount: Double?,
-        maxAmount: Double?,
+        minAmountCents: Long?,
+        maxAmountCents: Long?,
         invoiceFilter: Boolean?
     ): Flow<List<ExpenseEntity>>
 
-    @Query("SELECT COALESCE(SUM(totalAmount), 0) FROM expenses WHERE projectId = :projectId")
-    fun observeTotalSpent(projectId: Long): Flow<Double>
+    @Query("SELECT COALESCE(SUM(amountCents), 0) FROM expenses WHERE projectId = :projectId")
+    fun observeTotalSpentCents(projectId: Long): Flow<Long>
+
+    @Query("SELECT * FROM expenses WHERE remoteId = :remoteId LIMIT 1")
+    suspend fun getExpenseByRemoteId(remoteId: String): ExpenseEntity?
+
+    @Query("SELECT * FROM expenses WHERE syncState != 'SYNCED'")
+    suspend fun getPendingExpenses(): List<ExpenseEntity>
 
     @Query("SELECT * FROM expenses WHERE id = :id")
     suspend fun getExpense(id: Long): ExpenseEntity?
+
+    @Query("SELECT COUNT(*) FROM expenses WHERE projectId = :projectId")
+    suspend fun countExpensesForProject(projectId: Long): Int
 
     @Transaction
     @Query("SELECT * FROM expenses WHERE id = :id")
@@ -60,11 +69,35 @@ interface ExpenseDao {
     @Query("SELECT * FROM attachments WHERE expenseId = :expenseId")
     suspend fun getAttachmentsForExpense(expenseId: Long): List<AttachmentEntity>
 
+    @Query("SELECT * FROM attachments WHERE remoteId = :remoteId LIMIT 1")
+    suspend fun getAttachmentByRemoteId(remoteId: String): AttachmentEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertExpense(expense: ExpenseEntity): Long
 
     @Update
     suspend fun updateExpense(expense: ExpenseEntity)
+
+    @Update
+    suspend fun updateAttachment(attachment: AttachmentEntity)
+
+    @Query("UPDATE expenses SET remoteId = :remoteId, syncVersion = :version, syncState = 'SYNCED', clientMutationId = NULL WHERE id = :id")
+    suspend fun markExpenseSynced(id: Long, remoteId: String, version: Long)
+
+    @Query("UPDATE expenses SET syncVersion = :remoteVersion, syncState = 'CONFLICT' WHERE id = :id")
+    suspend fun markExpenseConflict(id: Long, remoteVersion: Long)
+
+    @Query("SELECT * FROM expenses WHERE syncState = 'CONFLICT'")
+    suspend fun getExpenseConflicts(): List<ExpenseEntity>
+
+    @Query("UPDATE attachments SET remoteId = :remoteId, syncVersion = :version, syncState = 'SYNCED' WHERE id = :id")
+    suspend fun markAttachmentSynced(id: Long, remoteId: String, version: Long)
+
+    @Query("DELETE FROM attachments WHERE remoteId = :remoteId")
+    suspend fun deleteAttachmentByRemoteId(remoteId: String)
+
+    @Query("DELETE FROM expenses WHERE remoteId = :remoteId")
+    suspend fun deleteExpenseByRemoteId(remoteId: String)
 
     @Delete
     suspend fun deleteExpense(expense: ExpenseEntity)

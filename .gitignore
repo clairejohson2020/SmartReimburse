@@ -34,3 +34,8 @@ wechat-miniprogram-upload-info.json
 wechat-miniprogram/miniprogram/miniprogram_npm/
 wechat-miniprogram/cloudfunctions/**/node_modules/
 wechat-miniprogram/cloudfunctions/**/package-lock.json
+
+# Local SSH host verification file used by Codex publishing.
+.codex-github-known-hosts
+.codex-ssh/
+.codex-secrets/

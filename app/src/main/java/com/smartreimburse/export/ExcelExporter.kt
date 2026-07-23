@@ -37,9 +37,11 @@ class ExcelExporter(private val context: Context) {
                 "名称",
                 "型号",
                 "数量",
+                "单价",
                 "金额",
                 "日期",
                 "发票号码/有无发票",
+                "报销状态",
                 "网购链接",
                 "备注",
                 "附件文件名"
@@ -68,15 +70,17 @@ class ExcelExporter(private val context: Context) {
                 row.createCell(1).setCellValue(expense.name)
                 row.createCell(2).setCellValue(expense.model)
                 row.createCell(3).setCellValue(expense.quantity.toDouble())
-                row.createCell(4).setCellValue(expense.totalAmount)
-                row.createCell(5).setCellValue(displayDateFormatter.format(Date(expense.date)))
-                row.createCell(6).setCellValue(invoiceLabel)
-                row.createCell(7).setCellValue(expense.onlineLink.orEmpty())
-                row.createCell(8).setCellValue(expense.notes.orEmpty())
-                row.createCell(9).setCellValue(attachmentNames)
+                row.createCell(4).setCellValue(expense.price)
+                row.createCell(5).setCellValue(expense.totalAmount)
+                row.createCell(6).setCellValue(displayDateFormatter.format(Date(expense.date)))
+                row.createCell(7).setCellValue(invoiceLabel)
+                row.createCell(8).setCellValue(if (expense.isReimbursed) "已报销" else "未报销")
+                row.createCell(9).setCellValue(expense.onlineLink.orEmpty())
+                row.createCell(10).setCellValue(expense.notes.orEmpty())
+                row.createCell(11).setCellValue(attachmentNames)
             }
 
-            val columnWidths = listOf(18, 18, 18, 10, 14, 20, 22, 32, 28, 42)
+            val columnWidths = listOf(18, 18, 18, 10, 14, 14, 20, 22, 12, 32, 28, 42)
             columnWidths.forEachIndexed { index, width ->
                 sheet.setColumnWidth(index, width * 256)
             }

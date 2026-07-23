@@ -16,12 +16,20 @@
         <text>{{expense.quantity}}</text>
       </view>
       <view class="detail-row">
+        <text class="detail-label">单价</text>
+        <text>{{expense.priceText}}</text>
+      </view>
+      <view class="detail-row">
         <text class="detail-label">日期</text>
         <text>{{expense.dateText}}</text>
       </view>
       <view class="detail-row">
         <text class="detail-label">发票</text>
         <text>{{expense.invoiceText}}</text>
+      </view>
+      <view class="detail-row">
+        <text class="detail-label">报销状态</text>
+        <text>{{expense.reimbursedText}}</text>
       </view>
       <view wx:if="{{expense.onlineLink}}" class="detail-row">
         <text class="detail-label">网购链接</text>

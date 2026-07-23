@@ -1,6 +1,6 @@
 # SmartReimburse
 
-SmartReimburse 是一个 Kotlin + Jetpack Compose 构建的本地报销管理 Android 应用，支持 Android 8.0/API 26 及以上版本。
+SmartReimburse 是一个 Kotlin + Jetpack Compose 构建的离线优先报销管理 Android 应用，支持 Android 8.0/API 26 及以上版本，并可通过微信云统一后端与微信小程序同步。
 
 ## 项目结构
 
@@ -18,7 +18,7 @@ SmartReimburse 是一个 Kotlin + Jetpack Compose 构建的本地报销管理 An
 用 Android Studio 打开当前目录并同步 Gradle。项目配置：
 
 - `minSdk = 26`
-- `targetSdk = 34`
+- `targetSdk = 36`
 - Kotlin + Jetpack Compose + Navigation Compose
 - Room + CameraX + ML Kit 中文 OCR + Coil + Apache POI
 
@@ -28,3 +28,7 @@ SmartReimburse 是一个 Kotlin + Jetpack Compose 构建的本地报销管理 An
 - Excel 导出在 `ExcelExporter` 中使用 Apache POI 写出 OOXML `.xlsx`，再由 FileProvider 生成只读分享 Uri。
 - 无发票记录保存前会校验付款截图；有发票记录保存前会校验发票原图。
 - 附件保存到应用私有目录，删除记录或编辑移除附件后会清理本地文件。
+
+## 多端同步
+
+Android 在“多端同步”页面生成六位配对码，用户在已登录的微信小程序首页批准后即可同步项目、支出和附件。详细设计见 `docs/architecture/unified-backend.md`，部署、索引、定时清理和告警要求见 `docs/cloud-operations.md`。

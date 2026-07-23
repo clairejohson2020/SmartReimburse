@@ -1,6 +1,7 @@
 package com.smartreimburse.repository
 
 import com.smartreimburse.data.AdvanceFundDao
+import com.smartreimburse.data.AppDatabase
 import com.smartreimburse.data.AdvanceFundEntity
 import com.smartreimburse.data.AttachmentEntity
 import com.smartreimburse.data.ExpenseDao
@@ -8,6 +9,12 @@ import com.smartreimburse.data.ExpenseEntity
 import com.smartreimburse.data.ExpenseWithAttachments
 import com.smartreimburse.data.ProjectDao
 import com.smartreimburse.data.ProjectEntity
+import com.smartreimburse.data.Money
+import com.smartreimburse.data.SyncState
+import com.smartreimburse.data.LocalDeletionDao
+import com.smartreimburse.data.LocalDeletionEntity
+import java.util.UUID
+import androidx.room.withTransaction
 import com.smartreimburse.viewmodel.ExpenseFilterUiState
 import com.smartreimburse.viewmodel.InvoiceFilter
 import java.io.File
@@ -19,9 +26,11 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 class ExpenseRepository(
+    private val database: AppDatabase,
     private val projectDao: ProjectDao,
     private val expenseDao: ExpenseDao,
-    private val advanceFundDao: AdvanceFundDao
+    private val advanceFundDao: AdvanceFundDao,
+    private val localDeletionDao: LocalDeletionDao
 ) {
     private val inputDateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
     private val zoneId = ZoneId.systemDefault()
@@ -39,7 +48,8 @@ class ExpenseRepository(
         val fallback = ProjectEntity(
             name = DEFAULT_PROJECT_NAME,
             createdAt = now,
-            updatedAt = now
+            updatedAt = now,
+            clientMutationId = newMutationId()
         )
         val id = projectDao.insertProject(fallback)
         return projectDao.getProject(id) ?: fallback.copy(id = id)
@@ -54,7 +64,8 @@ class ExpenseRepository(
         val project = ProjectEntity(
             name = name.trim(),
             createdAt = now,
-            updatedAt = now
+            updatedAt = now,
+            clientMutationId = newMutationId()
         )
         val id = projectDao.insertProject(project)
         return projectDao.getProject(id) ?: project.copy(id = id)
@@ -64,7 +75,9 @@ class ExpenseRepository(
         val project = projectDao.getProject(projectId) ?: return null
         val updated = project.copy(
             name = name.trim(),
-            updatedAt = System.currentTimeMillis()
+            updatedAt = System.currentTimeMillis(),
+            syncState = SyncState.PENDING,
+            clientMutationId = newMutationId()
         )
         projectDao.updateProject(updated)
         return updated
@@ -75,21 +88,38 @@ class ExpenseRepository(
         if (projects.size <= 1) return null
 
         val nextProject = projects.firstOrNull { it.id != projectId } ?: return null
+        val project = projects.firstOrNull { it.id == projectId } ?: return null
         val details = expenseDao.getAllExpenseWithAttachments(projectId)
+        database.withTransaction {
+            project.remoteId?.let { remoteId ->
+                localDeletionDao.insert(
+                    LocalDeletionEntity(
+                        entityType = "project",
+                        remoteId = remoteId,
+                        baseVersion = project.syncVersion,
+                        clientMutationId = newMutationId(),
+                        createdAt = System.currentTimeMillis()
+                    )
+                )
+            }
+            expenseDao.deleteExpensesForProject(projectId)
+            advanceFundDao.deleteForProject(projectId)
+            projectDao.deleteProject(projectId)
+        }
         details.flatMap { it.attachments }.forEach { attachment ->
             runCatching { File(attachment.filePath).delete() }
         }
-        expenseDao.deleteExpensesForProject(projectId)
-        advanceFundDao.deleteForProject(projectId)
-        projectDao.deleteProject(projectId)
         return nextProject
     }
 
     fun observeAdvanceFund(projectId: Long): Flow<Double> {
-        return advanceFundDao.observeAdvanceFund(projectId).map { it?.totalFund ?: 0.0 }
+        return advanceFundDao.observeAdvanceFund(projectId).map {
+            it?.let { fund -> Money.toDouble(fund.totalFundCents) } ?: 0.0
+        }
     }
 
-    fun observeTotalSpent(projectId: Long): Flow<Double> = expenseDao.observeTotalSpent(projectId)
+    fun observeTotalSpent(projectId: Long): Flow<Double> =
+        expenseDao.observeTotalSpentCents(projectId).map(Money::toDouble)
 
     fun observeFilteredExpenses(
         projectId: Long,
@@ -100,8 +130,8 @@ class ExpenseRepository(
             keyword = filter.keyword.trim(),
             fromDate = filter.fromDateText.toStartOfDayMillisOrNull(),
             toDate = filter.toDateText.toEndOfDayMillisOrNull(),
-            minAmount = filter.minAmountText.toDoubleOrNull(),
-            maxAmount = filter.maxAmountText.toDoubleOrNull(),
+            minAmountCents = Money.parseCents(filter.minAmountText),
+            maxAmountCents = Money.parseCents(filter.maxAmountText),
             invoiceFilter = when (filter.invoiceFilter) {
                 InvoiceFilter.ALL -> null
                 InvoiceFilter.WITH_INVOICE -> true
@@ -115,12 +145,23 @@ class ExpenseRepository(
     }
 
     suspend fun setAdvanceFund(projectId: Long, totalFund: Double) {
+        val cents = Money.fromDouble(totalFund)
         advanceFundDao.upsert(
             AdvanceFundEntity(
                 projectId = projectId,
-                totalFund = totalFund
+                totalFund = Money.toDouble(cents),
+                totalFundCents = cents
             )
         )
+        projectDao.getProject(projectId)?.let { project ->
+            projectDao.updateProject(
+                project.copy(
+                    updatedAt = System.currentTimeMillis(),
+                    syncState = SyncState.PENDING,
+                    clientMutationId = newMutationId()
+                )
+            )
+        }
     }
 
     suspend fun getExpenseWithAttachments(id: Long): ExpenseWithAttachments? {
@@ -136,23 +177,56 @@ class ExpenseRepository(
         attachments: List<AttachmentEntity>
     ): Long {
         return if (expense.id == 0L) {
-            expenseDao.insertExpenseWithAttachments(expense, attachments)
+            expenseDao.insertExpenseWithAttachments(
+                expense.copy(clientMutationId = newMutationId()),
+                attachments.map { it.copy(syncState = SyncState.PENDING) }
+            )
         } else {
+            val existingExpense = expenseDao.getExpense(expense.id)
+            val persistedExpense = expense.copy(
+                remoteId = existingExpense?.remoteId,
+                syncVersion = existingExpense?.syncVersion ?: 0,
+                syncState = SyncState.PENDING,
+                clientMutationId = newMutationId()
+            )
+            val existingAttachments = expenseDao.getAttachmentsForExpense(expense.id)
+                .associateBy { it.id }
+            val persistedAttachments = attachments.map { attachment ->
+                val existing = existingAttachments[attachment.id]
+                attachment.copy(
+                    remoteId = existing?.remoteId,
+                    cloudFileId = existing?.cloudFileId,
+                    syncVersion = existing?.syncVersion ?: 0,
+                    syncState = SyncState.PENDING
+                )
+            }
             val retainedPaths = attachments.map { it.filePath }.toSet()
-            expenseDao.getAttachmentsForExpense(expense.id)
-                .filterNot { it.filePath in retainedPaths }
-                .forEach { removed -> runCatching { File(removed.filePath).delete() } }
-            expenseDao.updateExpenseWithAttachments(expense, attachments)
+            val removedFiles = existingAttachments.values.filterNot { it.filePath in retainedPaths }
+            expenseDao.updateExpenseWithAttachments(persistedExpense, persistedAttachments)
+            removedFiles.forEach { removed -> runCatching { File(removed.filePath).delete() } }
             expense.id
         }
     }
 
     suspend fun deleteExpenseAndFiles(expenseId: Long) {
         val detail = expenseDao.getExpenseWithAttachments(expenseId) ?: return
+        database.withTransaction {
+            detail.expense.remoteId?.let { remoteId ->
+                localDeletionDao.insert(
+                    LocalDeletionEntity(
+                        entityType = "expense",
+                        remoteId = remoteId,
+                        baseVersion = detail.expense.syncVersion,
+                        clientMutationId = newMutationId(),
+                        createdAt = System.currentTimeMillis()
+                    )
+                )
+            }
+            expenseDao.deleteExpense(detail.expense)
+        }
         detail.attachments.forEach { attachment ->
             runCatching { File(attachment.filePath).delete() }
         }
-        expenseDao.deleteExpense(detail.expense)
     }
 
     private fun String.toStartOfDayMillisOrNull(): Long? {
@@ -182,4 +256,6 @@ class ExpenseRepository(
         const val DEFAULT_PROJECT_ID = 1L
         const val DEFAULT_PROJECT_NAME = "默认项目"
     }
+
+    private fun newMutationId(): String = UUID.randomUUID().toString().replace("-", "_")
 }

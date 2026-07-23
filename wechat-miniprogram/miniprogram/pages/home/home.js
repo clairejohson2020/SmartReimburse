@@ -27,7 +27,11 @@ Page({
     spentText: "¥0.00",
     advanceText: "¥0.00",
     remainingText: "¥0.00",
-    totalCount: 0
+    totalCount: 0,
+    pairingCode: "",
+    page: 1,
+    hasMore: false,
+    loadingMore: false
   },
 
   async onShow() {
@@ -90,16 +94,19 @@ Page({
     await this.loadExpenses()
   },
 
-  async loadExpenses() {
+  async loadExpenses(reset = true) {
     if (!this.data.currentProjectId) {
       this.setData({ expenses: [], totalCount: 0 })
       return
     }
 
+    const page = reset ? 1 : this.data.page + 1
     const data = await api.call("listExpenses", {
       projectId: this.data.currentProjectId,
       keyword: this.data.keyword,
-      invoiceFilter: invoiceValues[this.data.invoiceIndex]
+      invoiceFilter: invoiceValues[this.data.invoiceIndex],
+      page,
+      pageSize: 20
     })
 
     const expenses = (data.expenses || []).map(item => ({
@@ -111,12 +118,51 @@ Page({
     }))
 
     this.setData({
-      expenses,
+      expenses: reset ? expenses : this.data.expenses.concat(expenses),
+      page,
+      hasMore: !!(data.pagination && data.pagination.hasMore),
       spentText: formatMoney(data.stats && data.stats.spent),
       advanceText: formatMoney(data.stats && data.stats.advanceFund),
       remainingText: formatMoney(data.stats && data.stats.remaining),
       totalCount: data.stats ? data.stats.count : expenses.length
     })
+  },
+
+  async onReachBottom() {
+    if (!this.data.hasMore || this.data.loadingMore) return
+    try {
+      this.setData({ loadingMore: true })
+      await this.loadExpenses(false)
+    } catch (error) {
+      this.showError(error)
+    } finally {
+      this.setData({ loadingMore: false })
+    }
+  },
+
+  onPairingCodeInput(event) {
+    this.setData({ pairingCode: String(event.detail.value || "").replace(/\D/g, "").slice(0, 6) })
+  },
+
+  async approveDevicePair() {
+    if (!/^\d{6}$/.test(this.data.pairingCode)) {
+      wx.showToast({ title: "请输入 6 位配对码", icon: "none" })
+      return
+    }
+    try {
+      wx.showLoading({ title: "正在绑定" })
+      const result = await api.call("approveDevicePair", { code: this.data.pairingCode })
+      this.setData({ pairingCode: "" })
+      wx.showModal({
+        title: "设备已绑定",
+        content: `${result.deviceName || "Android 设备"}现在可以同步当前账号数据。`,
+        showCancel: false
+      })
+    } catch (error) {
+      this.showError(error)
+    } finally {
+      wx.hideLoading()
+    }
   },
 
   async onGetPhoneNumber(event) {
@@ -240,9 +286,15 @@ Page({
 
   async updateAdvanceFund() {
     try {
+      const amount = Number(this.data.advanceInput)
+      if (!Number.isFinite(amount) || amount < 0) {
+        wx.showToast({ title: "请输入有效备用金", icon: "none" })
+        return
+      }
       await api.call("updateAdvanceFund", {
         projectId: this.data.currentProjectId,
-        advanceFund: Number(this.data.advanceInput || 0)
+        advanceFundCents: Math.round(amount * 100),
+        advanceFund: amount
       })
       await this.loadProjects()
       wx.showToast({ title: "已更新" })

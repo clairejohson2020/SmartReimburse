@@ -2,10 +2,16 @@ const cloud = require("wx-server-sdk")
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 
+const db = cloud.database()
+
 exports.main = async event => {
   try {
+    const user = await requireUser()
     if (!event.fileID) {
       throw new Error("缺少待识别图片")
+    }
+    if (!isOwnedAttachmentFile(event.fileID, user.userId)) {
+      throw new Error("图片不存在或无权访问")
     }
 
     // This entry is intentionally cloud-side so a real OCR provider can be
@@ -29,4 +35,25 @@ exports.main = async event => {
       message: error.message || "OCR 识别失败"
     }
   }
+}
+
+async function requireUser() {
+  const openid = cloud.getWXContext().OPENID
+  if (!openid) throw new Error("未登录")
+  const mapping = await db.collection("user_openids").where({ openid }).limit(1).get()
+  if (mapping.data.length === 0) throw new Error("账号未初始化")
+  const users = await db.collection("users")
+    .where({ userId: mapping.data[0].userId })
+    .limit(1)
+    .get()
+  if (users.data.length === 0) throw new Error("账号不存在")
+  return users.data[0]
+}
+
+function isOwnedAttachmentFile(fileID, userId) {
+  const value = String(fileID || "")
+  const marker = `/attachments/${userId}/`
+  const markerIndex = value.indexOf(marker)
+  const suffix = markerIndex >= 0 ? value.slice(markerIndex + marker.length) : ""
+  return value.startsWith("cloud://") && markerIndex > "cloud://".length && !!suffix && !suffix.includes("..")
 }

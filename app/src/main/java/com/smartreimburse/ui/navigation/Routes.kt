@@ -8,6 +8,7 @@ object Routes {
     const val EDIT_FORM = "expense-form/{expenseId}"
     const val DETAIL = "expense-detail/{expenseId}"
     const val CAMERA = "camera/{type}/{runOcr}"
+    const val SYNC = "sync"
 
     fun newForm(): String = NEW_FORM
 
