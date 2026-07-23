@@ -4,9 +4,10 @@
   "private": true,
   "scripts": {
     "upload": "node ci/upload.js",
-    "check": "node ci/check.js"
+    "check": "node ci/check.js",
+    "test": "node --test tests/*.test.js"
   },
   "devDependencies": {
-    "miniprogram-ci": "^2.1.31"
+    "miniprogram-ci": "2.1.31"
   }
 }

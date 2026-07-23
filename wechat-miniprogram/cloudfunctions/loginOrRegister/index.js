@@ -41,28 +41,38 @@ async function ensureUser(openid) {
     }
   }
 
-  const now = db.serverDate()
-  const userId = `u_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
-  const user = {
-    userId,
-    openids: [openid],
-    phoneNumber: "",
-    phoneVerifiedAt: null,
-    createdAt: now,
-    updatedAt: now
-  }
+  return db.runTransaction(async transaction => {
+    const latestMapping = await transaction.collection("user_openids").where({ openid }).limit(1).get()
+    if (latestMapping.data.length > 0) {
+      const latestUsers = await transaction.collection("users")
+        .where({ userId: latestMapping.data[0].userId })
+        .limit(1)
+        .get()
+      if (latestUsers.data.length > 0) return latestUsers.data[0]
+    }
 
-  const addResult = await db.collection("users").add({ data: user })
-  await db.collection("user_openids").add({
-    data: {
-      openid,
+    const now = db.serverDate()
+    const userId = `u_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+    const user = {
       userId,
+      openids: [openid],
+      phoneNumber: "",
+      phoneVerifiedAt: null,
       createdAt: now,
       updatedAt: now
     }
+    const addResult = await transaction.collection("users").add({ data: user })
+    if (latestMapping.data.length > 0) {
+      await transaction.collection("user_openids").doc(latestMapping.data[0]._id).update({
+        data: { userId, updatedAt: now }
+      })
+    } else {
+      await transaction.collection("user_openids").add({
+        data: { openid, userId, createdAt: now, updatedAt: now }
+      })
+    }
+    return Object.assign({ _id: addResult._id }, user)
   })
-
-  return Object.assign({ _id: addResult._id }, user)
 }
 
 async function ensureDefaultProject(userId) {
@@ -72,14 +82,22 @@ async function ensureDefaultProject(userId) {
 
   if (countResult.total > 0) return
 
-  const now = db.serverDate()
-  await db.collection("projects").add({
-    data: {
-      userId,
-      name: "默认项目",
-      advanceFund: 0,
-      createdAt: now,
-      updatedAt: now
-    }
+  await db.runTransaction(async transaction => {
+    const latest = await transaction.collection("projects").where({ userId }).limit(1).get()
+    if (latest.data.length > 0) return
+    const now = db.serverDate()
+    await transaction.collection("projects").add({
+      data: {
+        userId,
+        name: "默认项目",
+        advanceFund: 0,
+        advanceFundCents: 0,
+        spentCents: 0,
+        expenseCount: 0,
+        version: 1,
+        createdAt: now,
+        updatedAt: now
+      }
+    })
   })
 }

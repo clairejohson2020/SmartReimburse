@@ -39,6 +39,17 @@ data class ExpenseFilterUiState(
     val invoiceFilter: InvoiceFilter = InvoiceFilter.ALL
 )
 
+data class SyncUiState(
+    val isConfigured: Boolean = false,
+    val isPaired: Boolean = false,
+    val pairingCode: String? = null,
+    val pairingExpiresAt: Long? = null,
+    val isBusy: Boolean = false,
+    val conflictCount: Int = 0,
+    val lastSyncAt: Long? = null,
+    val message: String? = null
+)
+
 data class AttachmentDraft(
     val id: Long = 0,
     val localId: String,

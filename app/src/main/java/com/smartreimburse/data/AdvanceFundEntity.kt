@@ -1,5 +1,6 @@
 package com.smartreimburse.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -7,5 +8,7 @@ import androidx.room.PrimaryKey
 data class AdvanceFundEntity(
     @PrimaryKey
     val projectId: Long,
-    val totalFund: Double
+    val totalFund: Double,
+    @ColumnInfo(defaultValue = "0")
+    val totalFundCents: Long = 0
 )

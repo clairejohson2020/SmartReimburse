@@ -11,10 +11,13 @@ import com.smartreimburse.data.AttachmentEntity
 import com.smartreimburse.data.AttachmentType
 import com.smartreimburse.data.ExpenseEntity
 import com.smartreimburse.data.ExpenseWithAttachments
+import com.smartreimburse.data.Money
+import com.smartreimburse.data.SyncState
 import com.smartreimburse.export.ExcelExporter
 import com.smartreimburse.ocr.OcrParser
 import com.smartreimburse.ocr.TextRecognitionService
 import com.smartreimburse.repository.ExpenseRepository
+import com.smartreimburse.sync.SyncManager
 import com.smartreimburse.repository.ExpenseRepository.Companion.DEFAULT_PROJECT_ID
 import java.io.File
 import java.util.UUID
@@ -37,14 +40,17 @@ class SmartReimburseViewModel(application: Application) : AndroidViewModel(appli
     private val database = AppDatabase.getInstance(application)
     private val preferences = application.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
     private val repository = ExpenseRepository(
+        database = database,
         projectDao = database.projectDao(),
         expenseDao = database.expenseDao(),
-        advanceFundDao = database.advanceFundDao()
+        advanceFundDao = database.advanceFundDao(),
+        localDeletionDao = database.localDeletionDao()
     )
     private val attachmentStore = AttachmentStore(application)
     private val textRecognitionService = TextRecognitionService(application)
     private val ocrParser = OcrParser()
     private val excelExporter = ExcelExporter(application)
+    private val syncManager = SyncManager(application, database)
 
     private val _filterState = MutableStateFlow(ExpenseFilterUiState())
     val filterState: StateFlow<ExpenseFilterUiState> = _filterState
@@ -54,6 +60,13 @@ class SmartReimburseViewModel(application: Application) : AndroidViewModel(appli
 
     private val _currentProjectId = MutableStateFlow<Long?>(null)
     private val _projectMessage = MutableStateFlow<String?>(null)
+    private val _syncState = MutableStateFlow(
+        SyncUiState(
+            isConfigured = syncManager.isConfigured,
+            isPaired = syncManager.isPaired
+        )
+    )
+    val syncState: StateFlow<SyncUiState> = _syncState
 
     val projectState: StateFlow<ProjectSelectionUiState> = combine(
         repository.observeProjects(),
@@ -188,6 +201,122 @@ class SmartReimburseViewModel(application: Application) : AndroidViewModel(appli
         _projectMessage.value = null
     }
 
+    fun createSyncPairing() {
+        viewModelScope.launch {
+            _syncState.update { it.copy(isBusy = true, message = null) }
+            runCatching { syncManager.createPairing() }
+                .onSuccess { pairing ->
+                    _syncState.update {
+                        it.copy(
+                            isBusy = false,
+                            pairingCode = pairing.code,
+                            pairingExpiresAt = pairing.expiresAt,
+                            message = "请在微信小程序中输入配对码并批准"
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _syncState.update { it.copy(isBusy = false, message = error.message ?: "配对失败") }
+                }
+        }
+    }
+
+    fun completeSyncPairing() {
+        viewModelScope.launch {
+            _syncState.update { it.copy(isBusy = true, message = "正在确认配对并首次同步...") }
+            runCatching { syncManager.completePairing() }
+                .onSuccess { conflicts ->
+                    _syncState.update {
+                        it.copy(
+                            isBusy = false,
+                            isPaired = true,
+                            pairingCode = null,
+                            pairingExpiresAt = null,
+                            conflictCount = conflicts,
+                            lastSyncAt = System.currentTimeMillis(),
+                            message = "配对和首次同步已完成"
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _syncState.update { it.copy(isBusy = false, message = error.message ?: "配对确认失败") }
+                }
+        }
+    }
+
+    fun syncNow() {
+        viewModelScope.launch {
+            _syncState.update { it.copy(isBusy = true, message = "正在同步...") }
+            runCatching { syncManager.syncNow() }
+                .onSuccess { conflicts ->
+                    _syncState.update {
+                        it.copy(
+                            isBusy = false,
+                            conflictCount = conflicts,
+                            lastSyncAt = System.currentTimeMillis(),
+                            message = if (conflicts == 0) "同步完成" else "发现 $conflicts 条并发修改，请选择保留版本"
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _syncState.update { it.copy(isBusy = false, message = error.message ?: "同步失败") }
+                }
+        }
+    }
+
+    fun disconnectSync() {
+        viewModelScope.launch {
+            _syncState.update { it.copy(isBusy = true, message = "正在撤销本机连接...") }
+            runCatching { syncManager.disconnect() }
+                .onSuccess {
+                    _syncState.value = SyncUiState(
+                        isConfigured = syncManager.isConfigured,
+                        message = "已撤销设备令牌并解除本机同步"
+                    )
+                }
+                .onFailure { error ->
+                    _syncState.update {
+                        it.copy(
+                            isBusy = false,
+                            message = error.message ?: "撤销失败，请联网后重试"
+                        )
+                    }
+                }
+        }
+    }
+
+    fun keepLocalSyncConflicts() {
+        resolveSyncConflicts("正在以本机版本解决冲突...", syncManager::keepLocalConflicts)
+    }
+
+    fun useCloudSyncConflicts() {
+        resolveSyncConflicts("正在采用云端版本...", syncManager::useCloudForConflicts)
+    }
+
+    private fun resolveSyncConflicts(message: String, resolver: suspend () -> Int) {
+        viewModelScope.launch {
+            _syncState.update { it.copy(isBusy = true, message = message) }
+            runCatching { resolver() }
+                .onSuccess { conflicts ->
+                    _syncState.update {
+                        it.copy(
+                            isBusy = false,
+                            conflictCount = conflicts,
+                            lastSyncAt = System.currentTimeMillis(),
+                            message = if (conflicts == 0) "冲突已解决并同步" else "仍有 $conflicts 条冲突"
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _syncState.update { it.copy(isBusy = false, message = error.message ?: "冲突处理失败") }
+                }
+        }
+    }
+
+    fun dismissSyncMessage() {
+        _syncState.update { it.copy(message = null) }
+    }
+
     fun setAdvanceFund(value: String) {
         val amount = value.toDoubleOrNull()
         if (amount == null || amount < 0.0) {
@@ -315,8 +444,10 @@ class SmartReimburseViewModel(application: Application) : AndroidViewModel(appli
             _formState.update { it.copy(isSaving = true, message = null) }
             runCatching {
                 val quantity = state.quantity.toIntOrNull() ?: 1
-                val price = state.price.toDoubleOrNull() ?: 0.0
-                val totalAmount = state.totalAmount.toDoubleOrNull() ?: price * quantity
+                val priceCents = Money.parseCents(state.price) ?: 0L
+                val totalAmountCents = Money.parseCents(state.totalAmount) ?: priceCents * quantity
+                val price = Money.toDouble(priceCents)
+                val totalAmount = Money.toDouble(totalAmountCents)
                 val expense = ExpenseEntity(
                     id = state.id,
                     projectId = state.projectId,
@@ -325,12 +456,16 @@ class SmartReimburseViewModel(application: Application) : AndroidViewModel(appli
                     quantity = quantity,
                     price = price,
                     totalAmount = totalAmount,
+                    priceCents = priceCents,
+                    amountCents = totalAmountCents,
                     date = state.dateMillis,
                     hasInvoice = state.hasInvoice,
                     invoiceNumber = state.invoiceNumber.trim().ifBlank { null },
                     onlineLink = state.onlineLink.trim().ifBlank { null },
                     notes = state.notes.trim().ifBlank { null },
-                    isReimbursed = state.isReimbursed
+                    isReimbursed = state.isReimbursed,
+                    syncState = SyncState.PENDING,
+                    clientMutationId = state.id.takeIf { it > 0 }?.let { "expense_${it}_${System.currentTimeMillis()}" }
                 )
                 val attachments = state.attachments.map {
                     AttachmentEntity(
@@ -465,6 +600,7 @@ class SmartReimburseViewModel(application: Application) : AndroidViewModel(appli
             state.name.isBlank() -> "请填写名称"
             state.quantity.toIntOrNull() == null || (state.quantity.toIntOrNull() ?: 0) <= 0 -> "请填写有效数量"
             totalAmount == null || totalAmount <= 0.0 -> "请填写有效金额"
+            state.attachments.any { File(it.filePath).length() > MAX_ATTACHMENT_BYTES } -> "单个附件不能超过 5MB"
             state.hasInvoice && state.invoiceAttachments.isEmpty() -> "有发票记录需要上传发票原图"
             !state.hasInvoice && state.paymentScreenshots.isEmpty() -> "无发票记录必须上传付款截图"
             else -> null
@@ -507,5 +643,6 @@ class SmartReimburseViewModel(application: Application) : AndroidViewModel(appli
     companion object {
         private const val PREFERENCES_NAME = "smart_reimburse_preferences"
         private const val KEY_CURRENT_PROJECT_ID = "current_project_id"
+        private const val MAX_ATTACHMENT_BYTES = 5L * 1024L * 1024L
     }
 }

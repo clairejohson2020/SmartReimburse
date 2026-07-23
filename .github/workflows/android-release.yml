@@ -69,10 +69,47 @@ jobs:
           echo "version_name=$version_name" >> "$GITHUB_OUTPUT"
           echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
 
-      - name: Build debug APK
+      - name: Prepare release signing
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          SMART_REIMBURSE_SYNC_API_URL: ${{ secrets.SMART_REIMBURSE_SYNC_API_URL }}
+        run: |
+          set -euo pipefail
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD SMART_REIMBURSE_SYNC_API_URL; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing required signing secret: $name"
+              exit 1
+            fi
+          done
+          mkdir -p "$RUNNER_TEMP/smart-reimburse-signing"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/smart-reimburse-signing/release.jks"
+          chmod 600 "$RUNNER_TEMP/smart-reimburse-signing/release.jks"
+
+      - name: Test, lint, and build signed release
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/smart-reimburse-signing/release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          SMART_REIMBURSE_SYNC_API_URL: ${{ secrets.SMART_REIMBURSE_SYNC_API_URL }}
         run: |
           chmod +x ./gradlew
-          ./gradlew clean :app:assembleDebug --no-daemon -Dkotlin.compiler.execution.strategy=in-process
+          ./gradlew clean :app:testDebugUnitTest :app:lintRelease :app:assembleRelease :app:bundleRelease --no-daemon -Dkotlin.compiler.execution.strategy=in-process
+
+      - name: Verify APK signature
+        run: apksigner verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
+
+      - name: Run database migration tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          disable-animations: true
+          script: ./gradlew :app:connectedDebugAndroidTest --no-daemon
 
       - name: Prepare release assets
         id: assets
@@ -83,11 +120,13 @@ jobs:
           tag_name="${{ steps.release.outputs.tag_name }}"
           version_name="${{ steps.release.outputs.version_name }}"
           version_code="${{ steps.release.outputs.version_code }}"
-          apk_name="SmartReimburse-${tag_name}-debug.apk"
+          apk_name="SmartReimburse-${tag_name}-release.apk"
+          aab_name="SmartReimburse-${tag_name}-release.aab"
 
           mkdir -p release-artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk "release-artifacts/${apk_name}"
-          sha256sum "release-artifacts/${apk_name}" > "release-artifacts/${apk_name}.sha256"
+          cp app/build/outputs/apk/release/app-release.apk "release-artifacts/${apk_name}"
+          cp app/build/outputs/bundle/release/app-release.aab "release-artifacts/${aab_name}"
+          sha256sum "release-artifacts/${apk_name}" "release-artifacts/${aab_name}" > "release-artifacts/SHA256SUMS.txt"
 
           cat > release-notes.md <<EOF
           ## SmartReimburse ${tag_name}
@@ -99,7 +138,8 @@ jobs:
           EOF
 
           echo "apk_path=release-artifacts/${apk_name}" >> "$GITHUB_OUTPUT"
-          echo "sha_path=release-artifacts/${apk_name}.sha256" >> "$GITHUB_OUTPUT"
+          echo "aab_path=release-artifacts/${aab_name}" >> "$GITHUB_OUTPUT"
+          echo "sha_path=release-artifacts/SHA256SUMS.txt" >> "$GITHUB_OUTPUT"
 
       - name: Create or update GitHub release
         env:
@@ -111,6 +151,7 @@ jobs:
           tag_name="${{ steps.release.outputs.tag_name }}"
           title="SmartReimburse ${tag_name}"
           apk_path="${{ steps.assets.outputs.apk_path }}"
+          aab_path="${{ steps.assets.outputs.aab_path }}"
           sha_path="${{ steps.assets.outputs.sha_path }}"
 
           if gh release view "$tag_name" >/dev/null 2>&1; then
@@ -126,4 +167,4 @@ jobs:
               --latest
           fi
 
-          gh release upload "$tag_name" "$apk_path" "$sha_path" --clobber
+          gh release upload "$tag_name" "$apk_path" "$aab_path" "$sha_path" --clobber

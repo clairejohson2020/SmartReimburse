@@ -13,6 +13,7 @@ import com.smartreimburse.ui.screens.CameraCaptureScreen
 import com.smartreimburse.ui.screens.ExpenseDetailScreen
 import com.smartreimburse.ui.screens.ExpenseFormScreen
 import com.smartreimburse.ui.screens.HomeScreen
+import com.smartreimburse.ui.screens.SyncSettingsScreen
 import com.smartreimburse.viewmodel.SmartReimburseViewModel
 
 @Composable
@@ -51,8 +52,13 @@ fun SmartReimburseNavHost(viewModel: SmartReimburseViewModel) {
             HomeScreen(
                 viewModel = viewModel,
                 onAddClick = { navController.navigate(Routes.newForm()) },
-                onExpenseClick = { navController.navigate(Routes.detail(it)) }
+                onExpenseClick = { navController.navigate(Routes.detail(it)) },
+                onSyncClick = { navController.navigate(Routes.SYNC) }
             )
+        }
+
+        composable(Routes.SYNC) {
+            SyncSettingsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
         }
 
         composable(route = Routes.NEW_FORM) {

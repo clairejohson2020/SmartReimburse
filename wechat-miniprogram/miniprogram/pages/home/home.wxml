@@ -18,6 +18,15 @@
       <button class="primary-button export-button" loading="{{exporting}}" bindtap="exportExcel">导出</button>
     </view>
 
+    <view class="pair-card card">
+      <view class="pair-copy">
+        <view class="pair-title">同步 Android</view>
+        <view class="muted">输入 Android 显示的 6 位配对码，将两端绑定到当前账号。</view>
+      </view>
+      <input class="input pair-input" type="number" maxlength="6" value="{{pairingCode}}" placeholder="配对码" bindinput="onPairingCodeInput" />
+      <button class="primary-button pair-button" bindtap="approveDevicePair">绑定</button>
+    </view>
+
     <view class="stats">
       <view class="stat-card">
         <text class="stat-label">备用金</text>
@@ -63,6 +72,8 @@
         </view>
       </view>
     </view>
+    <view wx:if="{{loadingMore}}" class="loading-more">加载更多...</view>
+    <view wx:elif="{{!hasMore && expenses.length > 0}}" class="loading-more">已加载全部</view>
 
     <button class="add-button" bindtap="addExpense">+</button>
 

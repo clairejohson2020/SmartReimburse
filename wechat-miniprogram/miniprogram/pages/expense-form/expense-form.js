@@ -8,6 +8,7 @@ const {
 const typeLabels = {
   invoice: "发票",
   payment: "付款截图",
+  receipt: "收据/送货单",
   other: "其他"
 }
 
@@ -23,11 +24,13 @@ Page({
       name: "",
       model: "",
       quantity: "1",
+      price: "",
       totalAmount: "",
       hasInvoice: true,
       invoiceNumber: "",
       onlineLink: "",
-      notes: ""
+      notes: "",
+      isReimbursed: false
     },
     attachments: []
   },
@@ -54,11 +57,13 @@ Page({
           name: expense.name || "",
           model: expense.model || "",
           quantity: String(expense.quantity || 1),
+          price: String(expense.price || ""),
           totalAmount: String(expense.totalAmount || ""),
           hasInvoice: !!expense.hasInvoice,
           invoiceNumber: expense.invoiceNumber || "",
           onlineLink: expense.onlineLink || "",
-          notes: expense.notes || ""
+          notes: expense.notes || "",
+          isReimbursed: !!expense.isReimbursed
         },
         attachments: (data.attachments || []).map(item => ({
           _id: item._id,
@@ -88,6 +93,10 @@ Page({
     this.setData({
       "form.hasInvoice": event.detail.value
     })
+  },
+
+  onReimbursedSwitch(event) {
+    this.setData({ "form.isReimbursed": event.detail.value })
   },
 
   onDateChange(event) {
@@ -134,8 +143,11 @@ Page({
         wx.previewImage({ urls: [item.localPath] })
         return
       }
-      const result = await wx.cloud.getTempFileURL({ fileList: [item.fileID] })
-      const url = result.fileList && result.fileList[0] && result.fileList[0].tempFileURL
+      const result = await api.call("getAttachmentDownloadUrl", {
+        attachmentId: item._id || "",
+        fileID: item.fileID || ""
+      })
+      const url = result.url
       if (url) {
         wx.previewImage({ urls: [url] })
       }
@@ -205,8 +217,31 @@ Page({
       wx.showToast({ title: "请输入名称", icon: "none" })
       return
     }
-    if (!Number(form.totalAmount)) {
-      wx.showToast({ title: "请输入金额", icon: "none" })
+    const quantity = Number(form.quantity)
+    const price = Number(form.price || 0)
+    const amount = Number(form.totalAmount)
+    if (!Number.isSafeInteger(quantity) || quantity <= 0) {
+      wx.showToast({ title: "数量必须是正整数", icon: "none" })
+      return
+    }
+    if (!Number.isFinite(price) || price < 0) {
+      wx.showToast({ title: "请输入有效单价", icon: "none" })
+      return
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      wx.showToast({ title: "请输入有效金额", icon: "none" })
+      return
+    }
+    if (this.data.attachments.some(item => Number(item.size || 0) > 5 * 1024 * 1024)) {
+      wx.showToast({ title: "单个附件不能超过 5MB", icon: "none" })
+      return
+    }
+    const requiredType = form.hasInvoice ? "invoice" : "payment"
+    if (!this.data.attachments.some(item => item.type === requiredType)) {
+      wx.showToast({
+        title: form.hasInvoice ? "请上传发票原图" : "请上传付款截图",
+        icon: "none"
+      })
       return
     }
 
@@ -224,13 +259,17 @@ Page({
         expense: {
           name: form.name.trim(),
           model: form.model.trim(),
-          quantity: Number(form.quantity || 1),
-          totalAmount: Number(form.totalAmount || 0),
+          quantity,
+          priceCents: Math.round(price * 100),
+          price,
+          amountCents: Math.round(amount * 100),
+          totalAmount: amount,
           date: fromDateInputValue(this.data.dateValue),
           hasInvoice: !!form.hasInvoice,
           invoiceNumber: form.hasInvoice ? form.invoiceNumber.trim() : "",
           onlineLink: form.onlineLink.trim(),
-          notes: form.notes.trim()
+          notes: form.notes.trim(),
+          isReimbursed: !!form.isReimbursed
         },
         attachments: attachments.map(item => ({
           _id: item._id || "",
@@ -261,6 +300,10 @@ Page({
     const result = await wx.cloud.uploadFile({
       cloudPath,
       filePath: item.localPath
+    })
+    await api.call("registerPendingUpload", {
+      fileID: result.fileID,
+      size: Number(item.size || 0)
     })
 
     return Object.assign({}, item, {

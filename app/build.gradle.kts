@@ -5,6 +5,15 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+val releaseKeystorePath = providers.environmentVariable("ANDROID_KEYSTORE_PATH").orNull
+val releaseKeystorePassword = providers.environmentVariable("ANDROID_KEYSTORE_PASSWORD").orNull
+val releaseKeyAlias = providers.environmentVariable("ANDROID_KEY_ALIAS").orNull
+val releaseKeyPassword = providers.environmentVariable("ANDROID_KEY_PASSWORD").orNull
+val syncApiBaseUrl = providers.gradleProperty("SMART_REIMBURSE_SYNC_API_URL")
+    .orElse(providers.environmentVariable("SMART_REIMBURSE_SYNC_API_URL"))
+    .orElse("")
+    .get()
+
 android {
     namespace = "com.smartreimburse"
     compileSdk = 36
@@ -13,19 +22,45 @@ android {
     defaultConfig {
         applicationId = "com.smartreimburse"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 36
         versionCode = 2
         versionName = "1.1"
         multiDexEnabled = true
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField(
+            "String",
+            "SYNC_API_BASE_URL",
+            "\"${syncApiBaseUrl.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+        )
 
         vectorDrawables {
             useSupportLibrary = true
         }
     }
 
+    signingConfigs {
+        if (
+            releaseKeystorePath != null &&
+            releaseKeystorePassword != null &&
+            releaseKeyAlias != null &&
+            releaseKeyPassword != null
+        ) {
+            create("release") {
+                storeFile = file(releaseKeystorePath)
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            signingConfig = signingConfigs.findByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -41,6 +76,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     kotlinOptions {
@@ -60,6 +96,10 @@ android {
             )
         }
     }
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {
@@ -94,9 +134,19 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("org.apache.poi:poi-ooxml:5.2.5")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
 
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.2")
 
     debugImplementation("androidx.compose.ui:ui-test-manifest")
     debugImplementation("androidx.compose.ui:ui-tooling")
+
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    androidTestImplementation("androidx.arch.core:core-testing:2.2.0")
+    androidTestImplementation("androidx.room:room-testing:2.6.1")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:core:1.6.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
 }

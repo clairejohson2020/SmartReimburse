@@ -66,21 +66,35 @@ async function ensureUser(openid) {
     }
   }
 
-  const now = db.serverDate()
-  const userId = `u_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
-  const user = {
-    userId,
-    openids: [openid],
-    phoneNumber: "",
-    phoneVerifiedAt: null,
-    createdAt: now,
-    updatedAt: now
-  }
-  const addResult = await db.collection("users").add({ data: user })
-  await db.collection("user_openids").add({
-    data: { openid, userId, createdAt: now, updatedAt: now }
+  return db.runTransaction(async transaction => {
+    const latestMapping = await transaction.collection("user_openids").where({ openid }).limit(1).get()
+    if (latestMapping.data.length > 0) {
+      const latestUsers = await transaction.collection("users")
+        .where({ userId: latestMapping.data[0].userId })
+        .limit(1)
+        .get()
+      if (latestUsers.data.length > 0) return latestUsers.data[0]
+    }
+    const now = db.serverDate()
+    const userId = `u_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+    const user = {
+      userId,
+      openids: [openid],
+      phoneNumber: "",
+      phoneVerifiedAt: null,
+      createdAt: now,
+      updatedAt: now
+    }
+    const addResult = await transaction.collection("users").add({ data: user })
+    if (latestMapping.data.length > 0) {
+      await transaction.collection("user_openids").doc(latestMapping.data[0]._id).update({
+        data: { userId, updatedAt: now }
+      })
+    } else {
+      await transaction.collection("user_openids").add({ data: { openid, userId, createdAt: now, updatedAt: now } })
+    }
+    return Object.assign({ _id: addResult._id }, user)
   })
-  return Object.assign({ _id: addResult._id }, user)
 }
 
 async function updateUserPhone(user, openid, phoneNumber) {
@@ -114,28 +128,75 @@ async function mergeUsers(targetUser, sourceUser, openid, phoneNumber) {
     .concat(sourceUser.openids || [])
     .concat(openid)))
 
-  await db.collection("user_openids")
-    .where({ userId: sourceUserId })
-    .update({ data: { userId: targetUserId, updatedAt: now } })
-
-  await updateUserId("projects", sourceUserId, targetUserId, now)
-  await updateUserId("expenses", sourceUserId, targetUserId, now)
-  await updateUserId("attachments", sourceUserId, targetUserId, now)
-
-  await db.collection("users").doc(targetUser._id).update({
+  const operation = await db.collection("merge_operations").add({
     data: {
-      openids,
-      phoneNumber,
-      phoneVerifiedAt: now,
+      sourceUserId,
+      targetUserId,
+      status: "running",
+      stage: "created",
+      attempts: 1,
+      createdAt: now,
       updatedAt: now
     }
   })
-  await db.collection("users").doc(sourceUser._id).remove()
+
+  try {
+    // Data ownership is moved first. OpenID mappings are deliberately moved
+    // last so a failed operation can be retried by the source account.
+    await updateUserId("projects", sourceUserId, targetUserId, now)
+    await markMergeStage(operation._id, "projects")
+    await updateUserId("expenses", sourceUserId, targetUserId, now)
+    await markMergeStage(operation._id, "expenses")
+    await updateUserId("attachments", sourceUserId, targetUserId, now)
+    await markMergeStage(operation._id, "attachments")
+
+    await db.collection("users").doc(targetUser._id).update({
+      data: {
+        openids,
+        phoneNumber,
+        phoneVerifiedAt: now,
+        updatedAt: now
+      }
+    })
+    await markMergeStage(operation._id, "target_user")
+
+    await db.collection("user_openids")
+      .where({ userId: sourceUserId })
+      .update({ data: { userId: targetUserId, updatedAt: now } })
+    await markMergeStage(operation._id, "openid_mappings")
+
+    await db.collection("users").doc(sourceUser._id).remove()
+    await db.collection("merge_operations").doc(operation._id).update({
+      data: { status: "completed", stage: "completed", completedAt: db.serverDate(), updatedAt: db.serverDate() }
+    })
+  } catch (error) {
+    await db.collection("merge_operations").doc(operation._id).update({
+      data: {
+        status: "failed",
+        lastError: String(error.message || "merge failed").slice(0, 500),
+        updatedAt: db.serverDate()
+      }
+    })
+    console.error(JSON.stringify({
+      name: "user_merge_failed",
+      operationId: operation._id,
+      sourceUserId,
+      targetUserId,
+      error: error.message || "unknown"
+    }))
+    throw new Error("账号合并暂未完成，请稍后重试")
+  }
 
   return Object.assign({}, targetUser, {
     openids,
     phoneNumber,
     phoneVerifiedAt: Date.now()
+  })
+}
+
+async function markMergeStage(operationId, stage) {
+  await db.collection("merge_operations").doc(operationId).update({
+    data: { stage, updatedAt: db.serverDate() }
   })
 }
 
@@ -154,15 +215,23 @@ async function ensureDefaultProject(userId) {
     .count()
   if (countResult.total > 0) return
 
-  const now = db.serverDate()
-  await db.collection("projects").add({
-    data: {
-      userId,
-      name: "默认项目",
-      advanceFund: 0,
-      createdAt: now,
-      updatedAt: now
-    }
+  await db.runTransaction(async transaction => {
+    const latest = await transaction.collection("projects").where({ userId }).limit(1).get()
+    if (latest.data.length > 0) return
+    const now = db.serverDate()
+    await transaction.collection("projects").add({
+      data: {
+        userId,
+        name: "默认项目",
+        advanceFund: 0,
+        advanceFundCents: 0,
+        spentCents: 0,
+        expenseCount: 0,
+        version: 1,
+        createdAt: now,
+        updatedAt: now
+      }
+    })
   })
 }
 

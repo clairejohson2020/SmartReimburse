@@ -4,6 +4,7 @@ const { formatMoney, formatDate } = require("../../utils/format")
 const typeLabels = {
   invoice: "发票",
   payment: "付款截图",
+  receipt: "收据/送货单",
   other: "其他"
 }
 
@@ -33,8 +34,10 @@ Page({
         expense: {
           ...expense,
           amountText: formatMoney(expense.totalAmount),
+          priceText: formatMoney(expense.price),
           dateText: formatDate(expense.date),
-          invoiceText: expense.hasInvoice ? (expense.invoiceNumber || "有发票") : "无发票"
+          invoiceText: expense.hasInvoice ? (expense.invoiceNumber || "有发票") : "无发票",
+          reimbursedText: expense.isReimbursed ? "已报销" : "未报销"
         },
         attachments: (data.attachments || []).map(item => ({
           ...item,
@@ -78,8 +81,8 @@ Page({
     if (!attachment) return
 
     try {
-      const result = await wx.cloud.getTempFileURL({ fileList: [attachment.fileID] })
-      const url = result.fileList && result.fileList[0] && result.fileList[0].tempFileURL
+      const result = await api.call("getAttachmentDownloadUrl", { attachmentId: attachment._id })
+      const url = result.url
       if (url) {
         wx.previewImage({ urls: [url] })
       }

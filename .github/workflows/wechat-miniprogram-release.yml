@@ -43,7 +43,9 @@ jobs:
 
       - name: Validate mini program project files
         working-directory: wechat-miniprogram
-        run: npm run check
+        run: |
+          npm run check
+          npm test
 
       - name: Upload to WeChat Mini Program
         working-directory: wechat-miniprogram

@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Edit
@@ -86,7 +87,8 @@ import com.smartreimburse.viewmodel.SmartReimburseViewModel
 fun HomeScreen(
     viewModel: SmartReimburseViewModel,
     onAddClick: () -> Unit,
-    onExpenseClick: (Long) -> Unit
+    onExpenseClick: (Long) -> Unit,
+    onSyncClick: () -> Unit
 ) {
     val dashboard by viewModel.dashboardState.collectAsStateWithLifecycle()
     val expenses by viewModel.expenses.collectAsStateWithLifecycle()
@@ -102,13 +104,17 @@ fun HomeScreen(
                 title = projectState.currentProject?.let { "项目：${it.name}" } ?: "项目加载中",
                 onTitleClick = { showProjectDialog = true },
                 actions = {
+                    IconButton(onClick = onSyncClick) {
+                        Icon(Icons.Outlined.CloudSync, contentDescription = "多端同步", tint = AccentTeal)
+                    }
                     IconButton(
                         enabled = projectState.currentProject != null,
                         onClick = {
-                        viewModel.exportExcel { file ->
-                            ShareManager.shareExcel(context, file)
+                            viewModel.exportExcel { file ->
+                                ShareManager.shareExcel(context, file)
+                            }
                         }
-                    }) {
+                    ) {
                         Icon(Icons.Outlined.Download, contentDescription = "导出 Excel", tint = AccentCyan)
                     }
                 }
