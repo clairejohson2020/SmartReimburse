@@ -38,3 +38,4 @@ wechat-miniprogram/cloudfunctions/**/package-lock.json
 # Local SSH host verification file used by Codex publishing.
 .codex-github-known-hosts
 .codex-ssh/
+.codex-secrets/
